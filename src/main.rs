@@ -96,7 +96,8 @@ fn has_staged_changes(repo_path: &str) -> Result<bool, git2::Error> {
 
 fn select_commit_type() -> String {
     let items = vec![
-        "feat", "fix", "build", "chore", "ci", "docs", "perf", "refactor", "revert", "style", "test",
+        "feat", "fix", "build", "chore", "ci", "docs", "perf", "refactor", "revert", "style",
+        "test",
     ];
     let selection = Select::new()
         .items(&items)
@@ -149,13 +150,10 @@ fn input_long_message() -> String {
 }
 
 fn commit_changes(message: &str) -> Result<(), git2::Error> {
-    // Commit changes to the repository
-
     let repo = Repository::open(".")?;
     let sig = repo.signature()?;
     let head = repo.head()?.peel_to_commit()?;
     let mut index = repo.index()?;
-    // index add only the staged files not tthe unstaged files
     let _ = index.write();
     let oid = index.write_tree()?;
     let tree = repo.find_tree(oid)?;
