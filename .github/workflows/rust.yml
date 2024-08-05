@@ -39,7 +39,7 @@ jobs:
       uses: actions/upload-artifact@v3
       with:
         name: rust-cli
-        path: target/debug/your-cli-name
+        path: target/debug/committy
 
   release:
     needs: build
