@@ -21,7 +21,6 @@ fn main() -> Result<(), git2::Error> {
     let amend: bool = matches.subcommand_matches("amend").is_some();
     let short_commit: Option<String> = matches.get_one::<String>("short-commit").cloned();
 
-    println!("Amend: {}", amend);
     if !amend {
         match has_staged_changes(".") {
             Ok(true) => {}
@@ -71,7 +70,6 @@ fn main() -> Result<(), git2::Error> {
         eprintln!("Error committing changes: {}", e);
         exit(1);
     }
-
     Ok(())
 }
 
@@ -107,7 +105,7 @@ fn has_staged_changes(repo_path: &str) -> Result<bool, git2::Error> {
 
 fn select_commit_type() -> String {
     let items = vec![
-        "feat", "fix", "build", "chore", "ci", "docs", "perf", "refactor", "revert", "style",
+        "feat", "fix", "build", "chore", "ci", "cd", "docs", "perf", "refactor", "revert", "style",
         "test",
     ];
     let selection = Select::new()
@@ -171,7 +169,14 @@ fn commit_changes(message: &str, amend: bool) -> Result<(), git2::Error> {
     if amend {
         let head = repo.head()?;
         let commit = head.peel_to_commit()?;
-        let _ = commit.amend(Some("HEAD"), Some(&sig), Some(&sig), None, Some(message), Some(&tree));
+        let _ = commit.amend(
+            Some("HEAD"),
+            Some(&sig),
+            Some(&sig),
+            None,
+            Some(message),
+            Some(&tree),
+        );
     } else {
         let head = repo.head()?.peel_to_commit()?;
         repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &[&head])?;
