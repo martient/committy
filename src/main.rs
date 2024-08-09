@@ -38,7 +38,7 @@ fn main() -> Result<(), git2::Error> {
     let commit_type = select_commit_type();
     let breaking_change = confirm_breaking_change();
     let scope: String = input_scope();
-    let short_message = if short_commit.as_ref().map_or(true, |s| s.len() < 1) {
+    let short_message = if short_commit.as_ref().map_or(true, |s| s.is_empty()) {
         input_short_message()
     } else {
         short_commit.unwrap()
