@@ -166,7 +166,15 @@ fn commit_changes(message: &str, amend: bool) -> Result<(), git2::Error> {
     let oid = index.write_tree()?;
     let tree = repo.find_tree(oid)?;
 
-    if amend {
+    let head_result = repo.head();
+    let is_initial_commit = match head_result {
+        Ok(head) => head.target().is_none(),
+        Err(_) => true,
+    };
+    if is_initial_commit {
+        // Initial commit check
+        repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &[])?;
+    } else if amend {
         let head = repo.head()?;
         let commit = head.peel_to_commit()?;
         let _ = commit.amend(
