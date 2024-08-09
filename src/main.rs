@@ -4,35 +4,46 @@ use git2::{DiffOptions, ErrorCode, Repository};
 use std::process::exit;
 
 fn main() -> Result<(), git2::Error> {
-    match has_staged_changes(".") {
-        Ok(true) => {}
-        Ok(false) => {
-            println!("No staged changes found.");
-            exit(1);
-        }
-        Err(e) => {
-            println!("Error: {}", e);
-            exit(1);
-        }
-    }
-
-    let _matches = Command::new(env!("CARGO_PKG_NAME"))
+    let matches = Command::new(env!("CARGO_PKG_NAME"))
         .version(env!("CARGO_PKG_VERSION"))
         .author(env!("CARGO_PKG_AUTHORS"))
         .about(env!("CARGO_PKG_DESCRIPTION"))
         .arg(
-            Arg::new("message")
-                .short('m')
-                .long("message")
-                .help("Commit message")
-                .value_name("MESSAGE"),
+            Arg::new("short-commit")
+                .short('s')
+                .long("short-commit")
+                .help("Short commit message")
+                .value_name("SHORT-COMMIT"),
         )
+        .subcommand(Command::new("amend").about("Amend the previous commit"))
         .get_matches();
+
+    let amend: bool = matches.subcommand_matches("amend").is_some();
+    let short_commit: Option<String> = matches.get_one::<String>("short-commit").cloned();
+
+    println!("Amend: {}", amend);
+    if !amend {
+        match has_staged_changes(".") {
+            Ok(true) => {}
+            Ok(false) => {
+                println!("No staged changes found.");
+                exit(1);
+            }
+            Err(e) => {
+                println!("Error: {}", e);
+                exit(1);
+            }
+        }
+    }
 
     let commit_type = select_commit_type();
     let breaking_change = confirm_breaking_change();
     let scope: String = input_scope();
-    let short_message = input_short_message();
+    let short_message = if short_commit.as_ref().map_or(true, |s| s.len() < 1) {
+        input_short_message()
+    } else {
+        short_commit.unwrap()
+    };
     let long_message = input_long_message();
 
     let mut full_message = if scope.is_empty() {
@@ -56,7 +67,7 @@ fn main() -> Result<(), git2::Error> {
         full_message = format!("{}\n\n{}", full_message, long_message);
     }
 
-    if let Err(e) = commit_changes(&full_message) {
+    if let Err(e) = commit_changes(&full_message, amend) {
         eprintln!("Error committing changes: {}", e);
         exit(1);
     }
@@ -149,14 +160,22 @@ fn input_long_message() -> String {
         .unwrap()
 }
 
-fn commit_changes(message: &str) -> Result<(), git2::Error> {
+fn commit_changes(message: &str, amend: bool) -> Result<(), git2::Error> {
     let repo = Repository::open(".")?;
     let sig = repo.signature()?;
-    let head = repo.head()?.peel_to_commit()?;
     let mut index = repo.index()?;
     let _ = index.write();
     let oid = index.write_tree()?;
     let tree = repo.find_tree(oid)?;
-    repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &[&head])?;
+
+    if amend {
+        let head = repo.head()?;
+        let commit = head.peel_to_commit()?;
+        let _ = commit.amend(Some("HEAD"), Some(&sig), Some(&sig), None, Some(message), Some(&tree));
+    } else {
+        let head = repo.head()?.peel_to_commit()?;
+        repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &[&head])?;
+    }
+
     Ok(())
 }
