@@ -38,7 +38,9 @@ To generate a commit message:
 committy
 ```
 
-[GIF placeholder: TO DO]
+#### Demo
+
+![Commit demo](docs/commit.gif)
 
 ## 🛠 Options and Commands
 
@@ -47,6 +49,10 @@ committy
 ```shell
 committy amend
 ```
+
+#### Demo
+
+![Amend demo](docs/amend.gif)
 
 ### Create a short commit
 
