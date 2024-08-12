@@ -35,8 +35,8 @@ jobs:
 
   release:
     permissions:
-      contents: read
-      packages: write
+      contents: write
+      discussions: write
     needs: build
     runs-on: ubuntu-latest
     steps:
