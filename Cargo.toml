@@ -6,6 +6,7 @@ edition = "2021"
 description = "A CLI tool to help you write better commit messages"
 repository = "https://github.com/martient/committy"
 license-file = "LICENSE"
+include = ["/src", "LICENSE"]
 
 
 
