@@ -27,8 +27,4 @@ impl CliCommand {
             CliCommand::Tag(cmd) => cmd.execute(),
         }
     }
-
-    pub fn default() -> Self {
-        CliCommand::Commit(commit::CommitCommand::default())
-    }
 }
