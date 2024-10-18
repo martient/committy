@@ -2,6 +2,7 @@ use crate::error::CliError;
 use crate::git;
 use crate::input;
 use super::Command;
+use log::info;
 use structopt::StructOpt;
 
 #[derive(StructOpt)]
@@ -25,7 +26,7 @@ impl Command for AmendCommand {
 
         git::commit_changes(&full_message, true)?;
 
-        println!("Previous commit amended successfully!");
+        info!("Previous commit amended successfully! 🎉");
         Ok(())
     }
 }

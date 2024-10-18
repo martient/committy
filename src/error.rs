@@ -11,17 +11,14 @@ pub enum CliError {
     
     #[error("Input error: {0}")]
     InputError(String),
-    
-    // #[error("Validation error: {0}")]
-    // ValidationError(String),
 
     #[error("No staged changes found")]
-    NoStagedChanges(),
+    NoStagedChanges,
 
     #[error("Please commit your staged changes before doing that")]
-    StagedChanges(),
+    StagedChanges,
 
-    #[error("dd {0}")]
+    #[error("{0}")]
     Generic(String),
 
     #[error("SemVer error: {0}")]

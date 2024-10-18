@@ -7,7 +7,7 @@ pub use prompts::{
     input_scope,
     input_short_message,
     input_long_message,
-    input_tag_name,
-    ask_want_changelog,
+    // input_tag_name,
+    // ask_want_changelog,
     ask_want_create_new_tag
 };

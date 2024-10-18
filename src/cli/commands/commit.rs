@@ -2,6 +2,7 @@ use crate::error::CliError;
 use crate::git;
 use crate::input;
 use super::Command;
+use log::info;
 use structopt::StructOpt;
 
 #[derive(StructOpt, Default)]
@@ -13,7 +14,7 @@ pub struct CommitCommand {
 impl Command for CommitCommand {
     fn execute(&self) -> Result<(), CliError> {
         if !git::has_staged_changes()? {
-            return Err(CliError::NoStagedChanges());
+            return Err(CliError::NoStagedChanges);
         }
 
         let commit_type = input::select_commit_type()?;
@@ -35,7 +36,7 @@ impl Command for CommitCommand {
 
         git::commit_changes(&full_message, false)?;
 
-        println!("Changes committed successfully!");
+        info!("Changes committed successfully! 🎉");
         Ok(())
     }
 }

@@ -2,7 +2,7 @@ use inquire::validator::Validation;
 use inquire::{Select, Confirm, Text};
 use crate::config::{COMMIT_TYPES, MAX_SHORT_DESCRIPTION_LENGTH};
 use crate::error::CliError;
-use super::validation::{validate_scope, validate_short_message, validate_tag_name};
+use super::validation::{validate_scope, validate_short_message};
 
 pub fn select_commit_type() -> Result<String, CliError> {
     Select::new("Select the type of commit:", COMMIT_TYPES.iter().map(|s| s.to_string()).collect())
@@ -39,23 +39,6 @@ pub fn input_short_message() -> Result<String, CliError> {
 
 pub fn input_long_message() -> Result<String, CliError> {
     Text::new("Enter a detailed description (optional):")
-        .prompt()
-        .map_err(|e| CliError::InputError(e.to_string()))
-}
-
-pub fn input_tag_name() -> Result<String, CliError> {
-    Text::new("Enter a tag name:")
-        .with_validator(|s: &str| {
-            validate_tag_name(s).map_err(|e| e.into())
-                .map(|_| Validation::Valid)
-        })
-        .prompt()
-        .map_err(|e| CliError::InputError(e.to_string()))
-}
-
-pub fn ask_want_changelog() -> Result<bool, CliError> {
-    Confirm::new("Do you want to generate a changelog?")
-        .with_default(false)
         .prompt()
         .map_err(|e| CliError::InputError(e.to_string()))
 }

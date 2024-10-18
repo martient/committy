@@ -2,6 +2,7 @@ use super::Command;
 use crate::error::CliError;
 use crate::git;
 use crate::input;
+use log::info;
 use structopt::StructOpt;
 
 
@@ -20,11 +21,11 @@ pub struct TagCommand {
 impl Command for TagCommand {
     fn execute(&self) -> Result<(), CliError> {
         if git::has_staged_changes()? {
-            return Err(CliError::StagedChanges());
+            return Err(CliError::StagedChanges);
         }
 
         if let Some(name) = &self.name {
-            println!("Tag {} created successfully!", name);
+            info!("Tag {} created successfully!", name);
         } else {
             let validate = if !self.validate {
                 input::ask_want_create_new_tag()?
@@ -32,7 +33,7 @@ impl Command for TagCommand {
                 true
             };
             if !validate {
-                println!("Abort");
+                info!("Abort");
                 return Ok(());
             }
             let version_manager = git::TagGenerator::new(self.tag_options.clone());
