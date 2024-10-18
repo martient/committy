@@ -18,8 +18,17 @@ pub enum CliError {
     #[error("No staged changes found")]
     NoStagedChanges(),
 
+    #[error("Please commit your staged changes before doing that")]
+    StagedChanges(),
+
     #[error("dd {0}")]
     Generic(String),
+
+    #[error("SemVer error: {0}")]
+    SemVerError(String),
+
+    #[error("RegexError error: {0}")]
+    RegexError(String),
 }
 
 impl From<clap::Error> for CliError {

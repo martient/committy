@@ -3,11 +3,14 @@ mod git;
 mod input;
 mod error;
 mod config;
+mod release;
 
 use structopt::StructOpt;
 use cli::commands::{commit::CommitCommand, CliCommand};
 use error::CliError;
 use config::SENTRY_DSN;
+use env_logger::{Env, Builder};
+use log::LevelFilter;
 
 #[derive(StructOpt)]
 #[structopt(name = "Committy", about = "🚀 Generate clear, concise, and structured commit messages effortlessly")]
@@ -17,6 +20,8 @@ struct Opt {
 }
 
 fn main() -> Result<(), CliError> {
+    Builder::from_env(Env::default().default_filter_or("info")).init();
+
     let _guard = sentry::init((
         SENTRY_DSN,
         sentry::ClientOptions {

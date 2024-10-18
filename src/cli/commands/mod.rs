@@ -1,5 +1,6 @@
 pub mod commit;
 pub mod amend;
+pub mod tag;
 
 use crate::error::CliError;
 use structopt::StructOpt;
@@ -14,6 +15,8 @@ pub enum CliCommand {
     Commit(commit::CommitCommand),
     #[structopt(about = "Amend the previous commit")]
     Amend(amend::AmendCommand),
+    #[structopt(about = "Create a new tag")]
+    Tag(tag::TagCommand),
 }
 
 impl CliCommand {
@@ -21,6 +24,7 @@ impl CliCommand {
         match self {
             CliCommand::Commit(cmd) => cmd.execute(),
             CliCommand::Amend(cmd) => cmd.execute(),
+            CliCommand::Tag(cmd) => cmd.execute(),
         }
     }
 

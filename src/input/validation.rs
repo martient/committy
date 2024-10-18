@@ -15,3 +15,11 @@ pub fn validate_scope(input: &str) -> Result<(), String> {
         Err("Scope must contain only alphanumeric characters and hyphens".to_string())
     }
 }
+
+pub fn validate_tag_name(input: &str) -> Result<(), String> {
+    if input.is_empty() || input.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        Ok(())
+    } else {
+        Err("Tag name must contain only alphanumeric characters, hyphens and underscores".to_string())
+    }
+}
