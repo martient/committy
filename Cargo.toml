@@ -17,6 +17,11 @@ git2 = "0.19.0"
 thiserror = "1.0.64"
 anyhow = "1.0"
 sentry = "0.34.0"
+chrono = "0.4.38"
+semver = "1.0.23"
+regex = "1.11.0"
+log = "0.4.22"
+env_logger = "0.11.5"
 
 [dev-dependencies]
 assert_cmd = "2.0"

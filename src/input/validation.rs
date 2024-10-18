@@ -4,7 +4,10 @@ pub fn validate_short_message(input: &str) -> Result<(), String> {
     if input.len() <= MAX_SHORT_DESCRIPTION_LENGTH {
         Ok(())
     } else {
-        Err(format!("The message must be {} characters or less", MAX_SHORT_DESCRIPTION_LENGTH))
+        Err(format!(
+            "The message must be {} characters or less",
+            MAX_SHORT_DESCRIPTION_LENGTH
+        ))
     }
 }
 

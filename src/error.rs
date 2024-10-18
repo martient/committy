@@ -1,25 +1,31 @@
-use thiserror::Error;
 use structopt::clap;
+use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum CliError {
     #[error("Git error: {0}")]
     GitError(#[from] git2::Error),
-    
+
     #[error("I/O error: {0}")]
     IoError(#[from] std::io::Error),
-    
+
     #[error("Input error: {0}")]
     InputError(String),
-    
-    // #[error("Validation error: {0}")]
-    // ValidationError(String),
 
     #[error("No staged changes found")]
-    NoStagedChanges(),
+    NoStagedChanges,
 
-    #[error("dd {0}")]
+    #[error("Please commit your staged changes before doing that")]
+    StagedChanges,
+
+    #[error("{0}")]
     Generic(String),
+
+    #[error("SemVer error: {0}")]
+    SemVerError(String),
+
+    #[error("RegexError error: {0}")]
+    RegexError(String),
 }
 
 impl From<clap::Error> for CliError {
