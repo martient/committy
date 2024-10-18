@@ -1,7 +1,7 @@
+use super::Command;
 use crate::error::CliError;
 use crate::git;
 use crate::input;
-use super::Command;
 use log::info;
 use structopt::StructOpt;
 

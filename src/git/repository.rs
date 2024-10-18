@@ -1,5 +1,5 @@
-use git2::{Repository, Status};
 use crate::error::CliError;
+use git2::{Repository, Status};
 
 pub fn has_staged_changes() -> Result<bool, CliError> {
     let repo = Repository::open(".")?;

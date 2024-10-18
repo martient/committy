@@ -1,5 +1,5 @@
-pub mod commit;
 pub mod amend;
+pub mod commit;
 pub mod tag;
 
 use crate::error::CliError;

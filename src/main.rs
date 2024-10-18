@@ -1,17 +1,20 @@
 mod cli;
+mod config;
+mod error;
 mod git;
 mod input;
-mod error;
-mod config;
 mod release;
 
-use structopt::StructOpt;
 use cli::commands::{commit::CommitCommand, CliCommand};
 use config::SENTRY_DSN;
-use env_logger::{Env, Builder};
+use env_logger::{Builder, Env};
+use structopt::StructOpt;
 
 #[derive(StructOpt)]
-#[structopt(name = "Committy", about = "🚀 Generate clear, concise, and structured commit messages effortlessly")]
+#[structopt(
+    name = "Committy",
+    about = "🚀 Generate clear, concise, and structured commit messages effortlessly"
+)]
 struct Opt {
     #[structopt(subcommand)]
     cmd: Option<CliCommand>,

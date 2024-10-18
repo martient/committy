@@ -1,14 +1,14 @@
-use thiserror::Error;
 use structopt::clap;
+use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum CliError {
     #[error("Git error: {0}")]
     GitError(#[from] git2::Error),
-    
+
     #[error("I/O error: {0}")]
     IoError(#[from] std::io::Error),
-    
+
     #[error("Input error: {0}")]
     InputError(String),
 

@@ -56,7 +56,7 @@ pub struct TagGeneratorOptions {
 
     #[structopt(long, help = "Custom tag message")]
     tag_message: Option<String>,
-    
+
     #[structopt(long, help = "Do not publish the new tag")]
     not_publish: bool,
 }
