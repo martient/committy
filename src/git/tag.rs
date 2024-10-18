@@ -1,5 +1,7 @@
+use std::env;
+
 use crate::error::CliError;
-use git2::{Oid, Repository};
+use git2::{FetchOptions, Oid, RemoteCallbacks, Repository};
 use log::{debug, error, info};
 use regex::Regex;
 use semver::Version;
@@ -54,6 +56,9 @@ pub struct TagGeneratorOptions {
 
     #[structopt(long, help = "Custom tag message")]
     tag_message: Option<String>,
+    
+    #[structopt(long, help = "Do not publish the new tag")]
+    not_publish: bool,
 }
 
 pub struct TagGenerator {
@@ -69,6 +74,7 @@ pub struct TagGenerator {
     none_string_token: String,
     force_without_changes: bool,
     tag_message: String,
+    not_publish: bool,
 }
 
 impl TagGenerator {
@@ -90,6 +96,7 @@ impl TagGenerator {
             none_string_token: options.none_string_token,
             force_without_changes: options.force_without_changes,
             tag_message: options.tag_message.unwrap_or_default(),
+            not_publish: options.not_publish,
         }
     }
 
@@ -136,7 +143,6 @@ impl TagGenerator {
             return Ok(());
         }
 
-        info!("📤 Creating and pushing new tag");
         self.create_and_push_tag(&repo, &new_tag)?;
         Ok(())
     }
@@ -160,9 +166,38 @@ impl TagGenerator {
     }
 
     fn fetch_tags(&self, repo: &Repository) -> Result<(), CliError> {
-        repo.remote_anonymous(&self.source)?
-            .fetch(&["refs/tags/*:refs/tags/*"], None, None)
-            .map_err(CliError::from)
+        debug!("Fetching tags from remote");
+        let mut remote = repo.find_remote("origin")?;
+
+        let mut callbacks = RemoteCallbacks::new();
+
+        callbacks.credentials(|_url, username_from_url, _allowed_types| {
+            git2::Cred::ssh_key(
+                username_from_url.unwrap_or("git"),
+                None,
+                std::path::Path::new(&format!("{}/.ssh/id_rsa", std::env::var("HOME").unwrap())),
+                None,
+            )
+        });
+
+        let mut fetch_options = FetchOptions::new();
+        fetch_options.remote_callbacks(callbacks);
+
+        remote.fetch(&["refs/tags/*:refs/tags/*"], Some(&mut fetch_options), None)
+            .map_err(|e| {
+                error!("Failed to fetch tags from remote: {}", e);
+                match e.code() {
+                    git2::ErrorCode::Auth => {
+                        error!("Authentication error. Please ensure your credentials are set up correctly.");
+                        error!("For SSH: Ensure your SSH key is added to the ssh-agent or located at ~/.ssh/id_rsa");
+                        error!("For HTTPS: Check your Git credential helper or use a personal access token.");
+                        error!("Debug info: SSH_AUTH_SOCK={:?}, HOME={:?}", env::var("SSH_AUTH_SOCK"), env::var("HOME"));
+                        error!("Remote URL: {:?}", remote.url());
+                    },
+                    _ => error!("Unexpected error occurred. Please check your network connection and repository permissions."),
+                }
+                CliError::from(e)
+            })
     }
 
     fn get_latest_tags(&self, repo: &Repository) -> Result<(String, String), CliError> {
@@ -358,15 +393,25 @@ impl TagGenerator {
             )?;
         }
 
-        if self.git_api_tagging {
+        if self.not_publish {
+            info!("🧪 Skip publishing as requested...")
+        } else if self.git_api_tagging {
             unimplemented!("GitHub API tagging not implemented yet");
         } else {
             let mut remote = repo.find_remote("origin")?;
             debug!("Pushing tag {} to remote", new_tag);
 
             let mut callbacks = git2::RemoteCallbacks::new();
-            callbacks.credentials(|url, username_from_url, allowed_types| {
-                git2::Cred::credential_helper(repo, url, username_from_url)
+            callbacks.credentials(|_url, username_from_url, _allowed_types| {
+                git2::Cred::ssh_key(
+                    username_from_url.unwrap_or("git"),
+                    None,
+                    std::path::Path::new(&format!(
+                        "{}/.ssh/id_rsa",
+                        std::env::var("HOME").unwrap()
+                    )),
+                    None,
+                )
             });
 
             let mut push_options = git2::PushOptions::new();
