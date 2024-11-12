@@ -324,8 +324,15 @@ impl TagGenerator {
     fn apply_bump(&self, version: &mut Version, bump: &str) {
         debug!("Applying bump: {} to version: {}", bump, version);
         match bump {
-            "major" => version.major += 1,
-            "minor" => version.minor += 1,
+            "major" => {
+                version.major += 1;
+                version.minor = 0;
+                version.patch = 0;
+            }
+            "minor" => {
+                version.minor += 1;
+                version.patch = 0;
+            }
             "patch" => version.patch += 1,
             _ => {}
         }
