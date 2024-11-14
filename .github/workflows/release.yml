@@ -39,16 +39,6 @@ jobs:
   release:
     name: Release for ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
-    
-    # Extract binary name from Cargo.toml to avoid mismatches
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Get binary name
-        shell: bash
-        run: |
-          BINARY_NAME=$(grep -m1 'name\s*=' Cargo.toml | cut -d'"' -f2 | cut -d"'" -f2)
-          echo "BINARY_NAME=$BINARY_NAME" >> $GITHUB_ENV
 
     strategy:
       fail-fast: false
