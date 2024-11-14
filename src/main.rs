@@ -12,9 +12,11 @@ use structopt::StructOpt;
 
 #[derive(StructOpt)]
 #[structopt(
-    name = "Committy",
-    about = "🚀 Generate clear, concise, and structured commit messages effortlessly"
+    name = env!("CARGO_PKG_NAME"),
+    about = env!("CARGO_PKG_DESCRIPTION"),
+    version = env!("CARGO_PKG_VERSION")
 )]
+
 struct Opt {
     #[structopt(subcommand)]
     cmd: Option<CliCommand>,
