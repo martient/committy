@@ -84,29 +84,46 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu
+          - name: Install cross-compilation tools
+          if: matrix.target == 'aarch64-unknown-linux-gnu'
+          run: |
+            sudo apt-get update
+            sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+            cargo install cross
 
       - name: Build
         run: |
-          cargo build --release --target ${{ matrix.target }}
+          if [[ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]]; then
+            cross build --release --target ${{ matrix.target }}
+          else
+            cargo build --release --target ${{ matrix.target }}
+          fi
         env:
           OPENSSL_STATIC: "1"
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
 
       - name: Prepare asset
         shell: bash
         run: |
-          cd target/${{ matrix.target }}/release
-          tar -czf ../../../${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz ${{ env.BINARY_NAME }}${{ matrix.suffix }}
-
+          # Convert Windows paths to bash-compatible format for Windows runners
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            cd "$GITHUB_WORKSPACE/target/${{ matrix.target }}/release"
+          else
+            cd target/${{ matrix.target }}/release
+          fi
+          tar -czf "../../../${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz" "${{ env.BINARY_NAME }}${{ matrix.suffix }}"
+  
       - name: Generate checksums
         shell: bash
         run: |
-          cd ${{ github.workspace }}
+          # Ensure we're in the correct directory
+          cd "$GITHUB_WORKSPACE"
           if [[ "$RUNNER_OS" == "macOS" ]]; then
-            shasum -a 256 ${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz > ${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz.sha256
+            shasum -a 256 "${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz" > "${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz.sha256"
           elif [[ "$RUNNER_OS" == "Windows" ]]; then
-            certutil -hashfile ${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz SHA256 | findstr /v "hash" > ${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz.sha256
+            certutil -hashfile "${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz" SHA256 | findstr /v "hash" > "${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz.sha256"
           else
-            sha256sum ${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz > ${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz.sha256
+            sha256sum "${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz" > "${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz.sha256"
           fi
 
       - name: Release
