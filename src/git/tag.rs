@@ -1,6 +1,6 @@
 use std::env;
 
-use crate::error::CliError;
+use crate::{config, error::CliError};
 use git2::{FetchOptions, Oid, RemoteCallbacks, Repository};
 use log::{debug, error, info};
 use regex::Regex;
@@ -300,13 +300,12 @@ impl TagGenerator {
 
     fn determine_bump(&self, log: &str) -> Result<&str, CliError> {
         debug!("Determining bump from commit log");
-        let major_pattern = Regex::new(r"(?im)^(breaking change:|feat(?:\s*\([^)]*\))?!:)")
+        let major_pattern = Regex::new(config::MAJOR_REGEX)
             .map_err(|e| CliError::RegexError(e.to_string()))?;
-        let minor_pattern = Regex::new(r"(?im)^feat(?:\s*\([^)]*\))?:")
+        let minor_pattern = Regex::new(config::MINOR_REGEX)
             .map_err(|e| CliError::RegexError(e.to_string()))?;
-        let patch_pattern =
-            Regex::new(r"(?im)^(fix|docs|style|refactor|perf|test|chore|ci|cd)(?:\s*\([^)]*\))?:")
-                .map_err(|e| CliError::RegexError(e.to_string()))?;
+        let patch_pattern = Regex::new(config::PATCH_REGEX)
+            .map_err(|e| CliError::RegexError(e.to_string()))?;
 
         if major_pattern.is_match(log) {
             Ok("major")
