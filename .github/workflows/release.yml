@@ -39,38 +39,79 @@ jobs:
   release:
     name: Release for ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
+    
+    # Extract binary name from Cargo.toml to avoid mismatches
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Get binary name
+        shell: bash
+        run: |
+          BINARY_NAME=$(grep -m1 'name\s*=' Cargo.toml | cut -d'"' -f2 | cut -d"'" -f2)
+          echo "BINARY_NAME=$BINARY_NAME" >> $GITHUB_ENV
+
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact_name: binary
-            asset_name: binary-linux-amd64
+            suffix: ""
+            asset_suffix: linux-amd64
           - os: ubuntu-latest
             target: aarch64-unknown-linux-gnu
-            artifact_name: binary
-            asset_name: binary-linux-arm64
+            suffix: ""
+            asset_suffix: linux-arm64
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact_name: binary.exe
-            asset_name: binary-windows-amd64.exe
+            suffix: .exe
+            asset_suffix: windows-amd64.exe
           - os: macos-latest
             target: x86_64-apple-darwin
-            artifact_name: binary
-            asset_name: binary-macos-amd64
+            suffix: ""
+            asset_suffix: macos-amd64
           - os: macos-latest
             target: aarch64-apple-darwin
-            artifact_name: binary
-            asset_name: binary-macos-arm64
+            suffix: ""
+            asset_suffix: macos-arm64
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Get binary name
+        shell: bash
+        run: |
+          BINARY_NAME=$(grep -m1 'name\s*=' Cargo.toml | cut -d'"' -f2 | cut -d"'" -f2)
+          echo "BINARY_NAME=$BINARY_NAME" >> $GITHUB_ENV
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+
+      # Install OpenSSL on Ubuntu
+      - name: Install OpenSSL (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev
+
+      # Install OpenSSL on macOS
+      - name: Install OpenSSL (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install openssl@3
+          echo "OPENSSL_DIR=$(brew --prefix openssl@3)" >> $GITHUB_ENV
+          echo "PKG_CONFIG_PATH=$(brew --prefix openssl@3)/lib/pkgconfig" >> $GITHUB_ENV
+
+      # Install OpenSSL on Windows
+      - name: Install OpenSSL (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          choco install openssl --no-progress
+          echo "OPENSSL_DIR=C:\Program Files\OpenSSL-Win64" >> $GITHUB_ENV
+          echo "OPENSSL_LIB_DIR=C:\Program Files\OpenSSL-Win64\lib" >> $GITHUB_ENV
+          echo "OPENSSL_INCLUDE_DIR=C:\Program Files\OpenSSL-Win64\include" >> $GITHUB_ENV
 
       - name: Install cross-compilation tools
         if: matrix.target == 'aarch64-unknown-linux-gnu'
@@ -81,24 +122,26 @@ jobs:
       - name: Build
         run: |
           cargo build --release --target ${{ matrix.target }}
+        env:
+          OPENSSL_STATIC: "1"
 
       - name: Prepare asset
         shell: bash
         run: |
           cd target/${{ matrix.target }}/release
-          tar -czf ../../../${{ matrix.asset_name }}.tar.gz ${{ matrix.artifact_name }}
+          tar -czf ../../../${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz ${{ env.BINARY_NAME }}${{ matrix.suffix }}
 
       - name: Generate SHA-256
         shell: bash
         run: |
           cd ${{ github.workspace }}
-          sha256sum ${{ matrix.asset_name }}.tar.gz > ${{ matrix.asset_name }}.tar.gz.sha256
+          sha256sum ${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz > ${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz.sha256
 
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            ${{ matrix.asset_name }}.tar.gz
-            ${{ matrix.asset_name }}.tar.gz.sha256
+            ${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz
+            ${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
