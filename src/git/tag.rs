@@ -248,11 +248,12 @@ impl TagGenerator {
         }
     }
 
-    fn get_commit_for_tag(&self, repo: &Repository, tag: &str) -> Result<Oid, CliError> {
-        repo.revparse_single(tag)?
-            .peel_to_commit()
-            .map(|commit| commit.id())
-            .map_err(CliError::from)
+    fn get_commit_for_tag(&self, repo: &Repository, tag: &str) -> Result<Option<Oid>, CliError> {
+        Ok(repo
+            .revparse_single(tag)
+            .ok()
+            .and_then(|obj| obj.peel_to_commit().ok())
+            .map(|commit| commit.id()))
     }
 
     fn get_current_commit(&self, repo: &Repository) -> Result<Oid, CliError> {
@@ -262,8 +263,10 @@ impl TagGenerator {
             .map_err(CliError::from)
     }
 
-    fn should_skip_tagging(&self, tag_commit: Oid, current_commit: Oid) -> bool {
-        tag_commit == current_commit && !self.force_without_changes
+    fn should_skip_tagging(&self, tag_commit: Option<Oid>, current_commit: Oid) -> bool {
+        tag_commit.map_or(false, |commit| {
+            commit == current_commit && !self.force_without_changes
+        })
     }
 
     fn calculate_new_tag(
@@ -369,7 +372,9 @@ impl TagGenerator {
 
         let mut revwalk = repo.revwalk()?;
         revwalk.push(head_commit)?;
-        revwalk.hide(tag_commit)?;
+        if let Some(commit) = tag_commit {
+            revwalk.hide(commit)?; // Only hide if we have a commit
+        }
 
         let log = revwalk
             .filter_map(|oid| oid.ok())
