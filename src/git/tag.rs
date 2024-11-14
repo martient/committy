@@ -300,12 +300,12 @@ impl TagGenerator {
 
     fn determine_bump(&self, log: &str) -> Result<&str, CliError> {
         debug!("Determining bump from commit log");
-        let major_pattern = Regex::new(config::MAJOR_REGEX)
-            .map_err(|e| CliError::RegexError(e.to_string()))?;
-        let minor_pattern = Regex::new(config::MINOR_REGEX)
-            .map_err(|e| CliError::RegexError(e.to_string()))?;
-        let patch_pattern = Regex::new(config::PATCH_REGEX)
-            .map_err(|e| CliError::RegexError(e.to_string()))?;
+        let major_pattern =
+            Regex::new(config::MAJOR_REGEX).map_err(|e| CliError::RegexError(e.to_string()))?;
+        let minor_pattern =
+            Regex::new(config::MINOR_REGEX).map_err(|e| CliError::RegexError(e.to_string()))?;
+        let patch_pattern =
+            Regex::new(config::PATCH_REGEX).map_err(|e| CliError::RegexError(e.to_string()))?;
 
         if major_pattern.is_match(log) {
             Ok("major")
