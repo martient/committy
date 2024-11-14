@@ -74,7 +74,9 @@ jobs:
       - name: Install OpenSSL (Windows)
         if: runner.os == 'Windows'
         run: |
-          choco install openssl --no-progress
+          choco install openssl strawberryperl --no-progress
+          refreshenv
+          cpan Locale::Maketext::Simple
           echo "OPENSSL_DIR=C:\Program Files\OpenSSL-Win64" >> $GITHUB_ENV
           echo "OPENSSL_LIB_DIR=C:\Program Files\OpenSSL-Win64\lib" >> $GITHUB_ENV
           echo "OPENSSL_INCLUDE_DIR=C:\Program Files\OpenSSL-Win64\include" >> $GITHUB_ENV
