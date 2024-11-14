@@ -121,11 +121,17 @@ jobs:
           cd target/${{ matrix.target }}/release
           tar -czf ../../../${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz ${{ env.BINARY_NAME }}${{ matrix.suffix }}
 
-      - name: Generate SHA-256
+      - name: Generate checksums
         shell: bash
         run: |
           cd ${{ github.workspace }}
-          sha256sum ${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz > ${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz.sha256
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            shasum -a 256 ${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz > ${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz.sha256
+          elif [[ "$RUNNER_OS" == "Windows" ]]; then
+            certutil -hashfile ${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz SHA256 | findstr /v "hash" > ${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz.sha256
+          else
+            sha256sum ${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz > ${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz.sha256
+          fi
 
       - name: Release
         uses: softprops/action-gh-release@v2
