@@ -21,19 +21,18 @@ impl VersionFile {
     pub fn update_version(&self, new_version: &str) -> Result<(), CliError> {
         let path = Path::new(&self.path);
         if !path.exists() {
-            return Ok(());  // Skip if file doesn't exist
+            return Ok(()); // Skip if file doesn't exist
         }
 
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| CliError::IoError(e))?;
+        let content = std::fs::read_to_string(path).map_err(CliError::IoError)?;
 
         let version_without_v = new_version.trim_start_matches('v');
-        let new_content = self.pattern
+        let new_content = self
+            .pattern
             .replace_all(&content, &self.format.replace("{}", version_without_v))
             .to_string();
 
-        std::fs::write(path, new_content)
-            .map_err(|e| CliError::IoError(e))?;
+        std::fs::write(path, new_content).map_err(CliError::IoError)?;
 
         Ok(())
     }
@@ -54,7 +53,7 @@ impl VersionManager {
         // Cargo.toml (Rust)
         self.add_version_file(
             "Cargo.toml",
-            r#"(?m)^\s*version\s*=\s*"[^"]*""#,  // (?m) enables multiline mode, ^ ensures start of line
+            r#"(?m)^\s*version\s*=\s*"[^"]*""#, // (?m) enables multiline mode, ^ ensures start of line
             r#"version = "{}""#,
         )?;
 

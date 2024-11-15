@@ -13,7 +13,11 @@ pub struct TagCommand {
     #[structopt(short = "y", long, help = "Want to create a new version (y/N)")]
     validate: bool,
 
-    #[structopt(short = "bfs", long = "bump-files", help = "Want to auto bump the config to the new version (y/N)")]
+    #[structopt(
+        short = "bfs",
+        long = "bump-files",
+        help = "Want to auto bump the config to the new version (y/N)"
+    )]
     bump_config_files: bool,
 
     #[structopt(flatten)]
@@ -38,7 +42,8 @@ impl Command for TagCommand {
                 info!("Abort");
                 return Ok(());
             }
-            let version_manager = git::TagGenerator::new(self.tag_options.clone(), self.bump_config_files);
+            let version_manager =
+                git::TagGenerator::new(self.tag_options.clone(), self.bump_config_files);
             version_manager.run()?;
         }
 
