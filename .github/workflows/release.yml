@@ -9,8 +9,8 @@ permissions:
 on:
   push:
     tags:
-      - "v*"
-      # - "v[0-9]+.[0-9]+.[0-9]+"
+      # - "v*"
+      - "v[0-9]+.[0-9]+.[0-9]+"
 
 
 jobs:
@@ -119,16 +119,19 @@ jobs:
           if [[ "$RUNNER_OS" == "macOS" ]]; then
             shasum -a 256 "${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz" > "${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz.sha256"
           elif [[ "$RUNNER_OS" == "Windows" ]]; then
-            certutil -hashfile "${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz" SHA256 | findstr /v "hash" > "${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz.sha256"
+            # certutil -hashfile "${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz" SHA256 | findstr /v "hash" > "${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz.sha256"
+            # certutil -hashfile "${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz" SHA256 | findstr /v /c:"SHA256 hash of" /c:"CertUtil" > "${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz.sha256"
+            powershell -Command "(Get-FileHash -Algorithm SHA256 '${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz').Hash.ToLower() + '  ${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz'" > "${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz.sha256"
+            # certutil -hashfile "committy-windows-amd64.exe.tar.gz" SHA256 | findstr /v /c:"SHA256 hash of" /c:"CertUtil" > "committy-windows-amd64.exe.tar.gz.sha256"
           else
             sha256sum "${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz" > "${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz.sha256"
           fi
 
-      # - name: Release
-      #   uses: softprops/action-gh-release@v2
-      #   with:
-      #     files: |
-      #       ${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz
-      #       ${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz.sha256
-      #   env:
-      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz
+            ${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
