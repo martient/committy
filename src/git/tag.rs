@@ -359,66 +359,66 @@ impl TagGenerator {
         // Update all version files
         let updated_files = version_manager.update_all_versions(new_version)?;
 
-        info!("Update file");
-        if !updated_files.is_empty() {
-            info!("Check empty");
-            // Stage and commit the changes
-            let repo = Repository::open(&self.source)?;
-            let mut index = repo.index()?;
+        // info!("Update file");
+        // if !updated_files.is_empty() {
+        //     info!("Check empty");
+        //     // Stage and commit the changes
+        //     let repo = Repository::open(&self.source)?;
+        //     let mut index = repo.index()?;
 
-            for file in &updated_files {
-                if let Ok(path) = std::path::Path::new(file).strip_prefix(&self.source) {
-                    info!("Add file {}", path.display());
-                    index.add_path(path)?;
-                }
-            }
-            index.write()?;
+        //     for file in &updated_files {
+        //         if let Ok(path) = std::path::Path::new(file).strip_prefix(&self.source) {
+        //             info!("Add file {}", path.display());
+        //             index.add_path(path)?;
+        //         }
+        //     }
+        //     index.write()?;
 
-            let tree_id = index.write_tree()?;
-            let tree = repo.find_tree(tree_id)?;
-            let signature = repo.signature()?;
-            let parent_commit = repo.head()?.peel_to_commit()?;
+        //     let tree_id = index.write_tree()?;
+        //     let tree = repo.find_tree(tree_id)?;
+        //     let signature = repo.signature()?;
+        //     let parent_commit = repo.head()?.peel_to_commit()?;
 
-            repo.commit(
-                Some("HEAD"),
-                &signature,
-                &signature,
-                &format!("chore: bump version to {}", new_version),
-                &tree,
-                &[&parent_commit],
-            )?;
+        //     repo.commit(
+        //         Some("HEAD"),
+        //         &signature,
+        //         &signature,
+        //         &format!("chore: bump version to {}", new_version),
+        //         &tree,
+        //         &[&parent_commit],
+        //     )?;
 
-            let head = repo.head()?;
-            let branch_name = head
-                .shorthand()
-                .ok_or_else(|| CliError::Generic("Could not get branch name".to_string()))?;
-            // Push the version bump commit
-            let mut remote = repo.find_remote("origin")?;
-            let mut callbacks = RemoteCallbacks::new();
-            callbacks.credentials(|_url, username_from_url, _allowed_types| {
-                git2::Cred::ssh_key(
-                    username_from_url.unwrap_or("git"),
-                    None,
-                    std::path::Path::new(&format!(
-                        "{}/.ssh/id_rsa",
-                        std::env::var("HOME").unwrap()
-                    )),
-                    None,
-                )
-            });
+        //     let head = repo.head()?;
+        //     let branch_name = head
+        //         .shorthand()
+        //         .ok_or_else(|| CliError::Generic("Could not get branch name".to_string()))?;
+        //     // Push the version bump commit
+        //     let mut remote = repo.find_remote("origin")?;
+        //     let mut callbacks = RemoteCallbacks::new();
+        //     callbacks.credentials(|_url, username_from_url, _allowed_types| {
+        //         git2::Cred::ssh_key(
+        //             username_from_url.unwrap_or("git"),
+        //             None,
+        //             std::path::Path::new(&format!(
+        //                 "{}/.ssh/id_rsa",
+        //                 std::env::var("HOME").unwrap()
+        //             )),
+        //             None,
+        //         )
+        //     });
 
-            let mut push_options = git2::PushOptions::new();
-            push_options.remote_callbacks(callbacks);
+        //     let mut push_options = git2::PushOptions::new();
+        //     push_options.remote_callbacks(callbacks);
 
-            remote.push(
-                &[&format!(
-                    "refs/heads/{}:refs/heads/{}",
-                    branch_name, branch_name
-                )],
-                Some(&mut push_options),
-            )?;
-            info!("📤 Pushed version bump commit to remote");
-        }
+        //     remote.push(
+        //         &[&format!(
+        //             "refs/heads/{}:refs/heads/{}",
+        //             branch_name, branch_name
+        //         )],
+        //         Some(&mut push_options),
+        //     )?;
+        //     info!("📤 Pushed version bump commit to remote");
+        // }
 
         Ok(updated_files)
     }
