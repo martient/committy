@@ -1,5 +1,6 @@
 use std::env;
 
+use crate::version::VersionManager;
 use crate::{config, error::CliError};
 use git2::{FetchOptions, Oid, RemoteCallbacks, Repository};
 use log::{debug, error, info};
@@ -75,10 +76,11 @@ pub struct TagGenerator {
     force_without_changes: bool,
     tag_message: String,
     not_publish: bool,
+    bump_config_files: bool,
 }
 
 impl TagGenerator {
-    pub fn new(options: TagGeneratorOptions) -> Self {
+    pub fn new(options: TagGeneratorOptions, allow_bump_config_files: bool) -> Self {
         TagGenerator {
             default_bump: options.default_bump,
             not_with_v: options.not_with_v,
@@ -97,6 +99,7 @@ impl TagGenerator {
             force_without_changes: options.force_without_changes,
             tag_message: options.tag_message.unwrap_or_default(),
             not_publish: options.not_publish,
+            bump_config_files: allow_bump_config_files,
         }
     }
 
@@ -141,6 +144,14 @@ impl TagGenerator {
         if self.dry_run {
             info!("🧪 Dry run: New tag would be {}", new_tag);
             return Ok(());
+        }
+
+        // Update version files
+        if self.bump_config_files {
+            let updated_files = self.update_versions(&new_tag)?;
+            if !updated_files.is_empty() {
+                info!("📝 Updated version in files: {}", updated_files.join(", "));
+            }
         }
 
         self.create_and_push_tag(&repo, &new_tag)?;
@@ -248,11 +259,12 @@ impl TagGenerator {
         }
     }
 
-    fn get_commit_for_tag(&self, repo: &Repository, tag: &str) -> Result<Oid, CliError> {
-        repo.revparse_single(tag)?
-            .peel_to_commit()
-            .map(|commit| commit.id())
-            .map_err(CliError::from)
+    fn get_commit_for_tag(&self, repo: &Repository, tag: &str) -> Result<Option<Oid>, CliError> {
+        Ok(repo
+            .revparse_single(tag)
+            .ok()
+            .and_then(|obj| obj.peel_to_commit().ok())
+            .map(|commit| commit.id()))
     }
 
     fn get_current_commit(&self, repo: &Repository) -> Result<Oid, CliError> {
@@ -262,8 +274,10 @@ impl TagGenerator {
             .map_err(CliError::from)
     }
 
-    fn should_skip_tagging(&self, tag_commit: Oid, current_commit: Oid) -> bool {
-        tag_commit == current_commit && !self.force_without_changes
+    fn should_skip_tagging(&self, tag_commit: Option<Oid>, current_commit: Oid) -> bool {
+        tag_commit.map_or(false, |commit| {
+            commit == current_commit && !self.force_without_changes
+        })
     }
 
     fn calculate_new_tag(
@@ -338,6 +352,77 @@ impl TagGenerator {
         debug!("New version after bump: {}", version);
     }
 
+    fn update_versions(&self, new_version: &str) -> Result<Vec<String>, CliError> {
+        let mut version_manager = VersionManager::new();
+        version_manager.register_common_files()?;
+
+        // Update all version files
+        let updated_files = version_manager.update_all_versions(new_version)?;
+
+        // info!("Update file");
+        // if !updated_files.is_empty() {
+        //     info!("Check empty");
+        //     // Stage and commit the changes
+        //     let repo = Repository::open(&self.source)?;
+        //     let mut index = repo.index()?;
+
+        //     for file in &updated_files {
+        //         if let Ok(path) = std::path::Path::new(file).strip_prefix(&self.source) {
+        //             info!("Add file {}", path.display());
+        //             index.add_path(path)?;
+        //         }
+        //     }
+        //     index.write()?;
+
+        //     let tree_id = index.write_tree()?;
+        //     let tree = repo.find_tree(tree_id)?;
+        //     let signature = repo.signature()?;
+        //     let parent_commit = repo.head()?.peel_to_commit()?;
+
+        //     repo.commit(
+        //         Some("HEAD"),
+        //         &signature,
+        //         &signature,
+        //         &format!("chore: bump version to {}", new_version),
+        //         &tree,
+        //         &[&parent_commit],
+        //     )?;
+
+        //     let head = repo.head()?;
+        //     let branch_name = head
+        //         .shorthand()
+        //         .ok_or_else(|| CliError::Generic("Could not get branch name".to_string()))?;
+        //     // Push the version bump commit
+        //     let mut remote = repo.find_remote("origin")?;
+        //     let mut callbacks = RemoteCallbacks::new();
+        //     callbacks.credentials(|_url, username_from_url, _allowed_types| {
+        //         git2::Cred::ssh_key(
+        //             username_from_url.unwrap_or("git"),
+        //             None,
+        //             std::path::Path::new(&format!(
+        //                 "{}/.ssh/id_rsa",
+        //                 std::env::var("HOME").unwrap()
+        //             )),
+        //             None,
+        //         )
+        //     });
+
+        //     let mut push_options = git2::PushOptions::new();
+        //     push_options.remote_callbacks(callbacks);
+
+        //     remote.push(
+        //         &[&format!(
+        //             "refs/heads/{}:refs/heads/{}",
+        //             branch_name, branch_name
+        //         )],
+        //         Some(&mut push_options),
+        //     )?;
+        //     info!("📤 Pushed version bump commit to remote");
+        // }
+
+        Ok(updated_files)
+    }
+
     fn calculate_pre_release_tag(&self, new_version: &Version, pre_tag: &str) -> String {
         debug!(
             "Calculating pre-release tag. New version: {}, Previous pre-tag: {}",
@@ -369,7 +454,9 @@ impl TagGenerator {
 
         let mut revwalk = repo.revwalk()?;
         revwalk.push(head_commit)?;
-        revwalk.hide(tag_commit)?;
+        if let Some(commit) = tag_commit {
+            revwalk.hide(commit)?; // Only hide if we have a commit
+        }
 
         let log = revwalk
             .filter_map(|oid| oid.ok())
