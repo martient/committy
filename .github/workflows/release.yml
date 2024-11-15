@@ -10,6 +10,8 @@ on:
   push:
     tags:
       - "v*"
+      # - "v[0-9]+.[0-9]+.[0-9]+"
+
 
 jobs:
   release:
@@ -28,10 +30,10 @@ jobs:
             target: aarch64-unknown-linux-gnu
             suffix: ""
             asset_suffix: linux-arm64
-          # - os: windows-latest # REMOVE UNTIL WE FIND A SOLUTION REGARDING OPEN SSL
-          #   target: x86_64-pc-windows-msvc
-          #   suffix: .exe
-          #   asset_suffix: windows-amd64.exe
+          - os: windows-latest # REMOVE UNTIL WE FIND A SOLUTION REGARDING OPEN SSL
+            target: x86_64-pc-windows-msvc
+            suffix: .exe
+            asset_suffix: windows-amd64.exe
           - os: macos-latest
             target: x86_64-apple-darwin
             suffix: ""
@@ -77,12 +79,7 @@ jobs:
         shell: bash
         if: runner.os == 'Windows'
         run: |
-          choco install openssl strawberryperl refreshenv --no-progress
-          refreshenv
-          cpan Locale::Maketext::Simple
-          echo "OPENSSL_DIR=C:\Program Files\OpenSSL-Win64" >> $GITHUB_ENV
-          echo "OPENSSL_LIB_DIR=C:\Program Files\OpenSSL-Win64\lib" >> $GITHUB_ENV
-          echo "OPENSSL_INCLUDE_DIR=C:\Program Files\OpenSSL-Win64\include" >> $GITHUB_ENV
+          choco install strawberryperl make
 
       - name: Install cross-compilation tools
         if: matrix.target == 'aarch64-unknown-linux-gnu'
@@ -127,11 +124,11 @@ jobs:
             sha256sum "${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz" > "${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz.sha256"
           fi
 
-      - name: Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            ${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz
-            ${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz.sha256
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # - name: Release
+      #   uses: softprops/action-gh-release@v2
+      #   with:
+      #     files: |
+      #       ${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz
+      #       ${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz.sha256
+      #   env:
+      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
