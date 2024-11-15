@@ -80,7 +80,7 @@ pub struct TagGenerator {
 }
 
 impl TagGenerator {
-    pub fn new(options: TagGeneratorOptions, bump_config_files: bool) -> Self {
+    pub fn new(options: TagGeneratorOptions, allow_bump_config_files: bool) -> Self {
         TagGenerator {
             default_bump: options.default_bump,
             not_with_v: options.not_with_v,
@@ -99,7 +99,7 @@ impl TagGenerator {
             force_without_changes: options.force_without_changes,
             tag_message: options.tag_message.unwrap_or_default(),
             not_publish: options.not_publish,
-            bump_config_files: bump_config_files,
+            bump_config_files: allow_bump_config_files,
         }
     }
 
