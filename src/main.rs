@@ -4,6 +4,7 @@ mod error;
 mod git;
 mod input;
 mod release;
+mod version;
 
 use cli::commands::{commit::CommitCommand, CliCommand};
 use config::SENTRY_DSN;
