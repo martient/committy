@@ -3,6 +3,7 @@ mod config;
 mod error;
 mod git;
 mod input;
+mod linter;
 mod release;
 mod version;
 
@@ -45,5 +46,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("Error: {}", e);
         std::process::exit(1);
     }
+
     Ok(())
 }

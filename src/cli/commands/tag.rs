@@ -5,7 +5,7 @@ use crate::input;
 use log::info;
 use structopt::StructOpt;
 
-#[derive(StructOpt)]
+#[derive(Debug, StructOpt)]
 pub struct TagCommand {
     #[structopt(short, long, help = "Provide a tag name")]
     name: Option<String>,

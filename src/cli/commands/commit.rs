@@ -6,7 +6,7 @@ use crate::input::validation::{auto_correct_scope, suggest_commit_type};
 use log::{debug, info};
 use structopt::StructOpt;
 
-#[derive(StructOpt, Default)]
+#[derive(Debug, StructOpt, Default)]
 pub struct CommitCommand {
     #[structopt(long, help = "Type of commit (e.g., feat, fix, docs)")]
     type_: Option<String>,
