@@ -14,12 +14,34 @@ pub fn validate_short_message(input: &str) -> Result<(), String> {
 
 pub fn suggest_commit_type(input: &str) -> Option<&'static str> {
     let input = input.trim().to_lowercase();
+
+    // First try exact match
+    if let Some(&exact_match) = COMMIT_TYPES.iter().find(|&&t| t == input) {
+        return Some(exact_match);
+    }
+
+    // Then try common variations
+    let variations = [
+        ("feature", "feat"),
+        ("ci", "ci"),
+        ("docs", "docs"),
+        ("feet", "feat"),
+        ("ffix", "fix"),
+    ];
+
+    for (variation, commit_type) in variations.iter() {
+        if input == *variation {
+            return Some(commit_type);
+        }
+    }
+
+    // Finally try fuzzy matching
     COMMIT_TYPES
         .iter()
         .min_by_key(|&&valid_type| strsim::levenshtein(&input, valid_type))
         .filter(|&&valid_type| {
             let distance = strsim::levenshtein(&input, valid_type);
-            let max_allowed = (valid_type.len() as f32 * 0.6).ceil() as usize;
+            let max_allowed = (valid_type.len() as f32 * 0.4).ceil() as usize;
             distance <= max_allowed
         })
         .copied()

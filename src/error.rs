@@ -1,13 +1,15 @@
+use git2::Error as Git2Error;
+use std::io::Error as IoError;
 use structopt::clap;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum CliError {
     #[error("Git error: {0}")]
-    GitError(#[from] git2::Error),
+    GitError(#[from] Git2Error),
 
-    #[error("I/O error: {0}")]
-    IoError(#[from] std::io::Error),
+    #[error("IO error: {0}")]
+    IoError(#[from] IoError),
 
     #[error("Input error: {0}")]
     InputError(String),
@@ -15,8 +17,13 @@ pub enum CliError {
     #[error("No staged changes found\nFor help, run 'committy --help'")]
     NoStagedChanges,
 
-    #[error("Please commit your staged changes before doing that\nFor help, run 'committy tag --help'")]
+    #[error(
+        "Please commit your staged changes before doing that\nFor help, run 'committy tag --help'"
+    )]
     StagedChanges,
+
+    #[error("Git user configuration is missing: {0}\nFor help, run 'git config --global user.name \"Your Name\"' and 'git config --global user.email \"your.email@example.com\"'")]
+    GitConfigError(String),
 
     #[error("{0}")]
     Generic(String),

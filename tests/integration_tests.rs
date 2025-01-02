@@ -12,7 +12,7 @@ fn setup() -> tempfile::TempDir {
 
     // Initialize a git repository for testing
     let _ = StdCommand::new("git")
-        .args(&["init"])
+        .args(["init"])
         .current_dir(&dir)
         .output()
         .expect("Failed to initialize git repository");
@@ -23,20 +23,20 @@ fn setup() -> tempfile::TempDir {
 
     // Add the file to git
     let _ = StdCommand::new("git")
-        .args(&["add", "test.txt"])
+        .args(["add", "test.txt"])
         .current_dir(&dir)
         .output()
         .expect("Failed to add test file to git");
 
     // Configure git user for commits
     let _ = StdCommand::new("git")
-        .args(&["config", "user.name", "Test User"])
+        .args(["config", "user.name", "Test User"])
         .current_dir(&dir)
         .output()
         .expect("Failed to configure git user name");
 
     let _ = StdCommand::new("git")
-        .args(&["config", "user.email", "test@example.com"])
+        .args(["config", "user.email", "test@example.com"])
         .current_dir(&dir)
         .output()
         .expect("Failed to configure git user email");
@@ -47,13 +47,13 @@ fn setup() -> tempfile::TempDir {
 fn cleanup(temp_dir: tempfile::TempDir) {
     // Clean up the test repository
     let _ = StdCommand::new("rm")
-        .args(&["-rf", ".git"])
+        .args(["-rf", ".git"])
         .current_dir(&temp_dir)
         .output()
         .expect("Failed to clean up git repository");
 
     let _ = StdCommand::new("rm")
-        .args(&["test.txt"])
+        .args(["test.txt"])
         .current_dir(&temp_dir)
         .output()
         .expect("Failed to clean up test file");

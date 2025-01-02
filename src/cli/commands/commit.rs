@@ -25,10 +25,16 @@ pub struct CommitCommand {
 
     #[structopt(long, help = "Run in non-interactive mode")]
     non_interactive: bool,
+
+    #[structopt(long, help = "Amend the previous commit")]
+    amend: bool,
 }
 
 impl Command for CommitCommand {
     fn execute(&self) -> Result<(), CliError> {
+        // Validate git configuration first
+        git::validate_git_config()?;
+
         if !git::has_staged_changes()? {
             return Err(CliError::NoStagedChanges);
         }
@@ -121,7 +127,7 @@ impl Command for CommitCommand {
         println!("{}", full_message);
         debug!("Formatted commit message: {}", full_message);
 
-        git::commit_changes(&full_message, false)?;
+        git::commit_changes(&full_message, self.amend)?;
 
         info!("Changes committed successfully! 🎉");
         Ok(())
