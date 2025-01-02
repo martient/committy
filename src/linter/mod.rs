@@ -47,11 +47,12 @@ impl CommitLinter {
         // Conventional commit regex parts
         let type_pattern = format!(r"(?:{})", crate::config::COMMIT_TYPES.join("|"));
         let scope_pattern = r"(?:\([a-z0-9-]+\))?";
+        let breaking_change = r"(?:!)?";  // Optional breaking change indicator
         let separator = r"\: ";
         let description = r".+";
         let full_pattern = format!(
-            "^{}{}{}{}$",
-            type_pattern, scope_pattern, separator, description
+            "^{}{}{}{}{}$",
+            type_pattern, scope_pattern, breaking_change, separator, description
         );
         let commit_regex = Regex::new(&full_pattern).unwrap();
 
@@ -188,14 +189,17 @@ mod tests {
     #[test]
     fn test_valid_commit_message() {
         let (temp_dir, repo) = setup_test_repo();
-        create_commit(&repo, "feat: add new feature");
+
+        // Test regular commit
+        create_commit(&repo, "feat(api): add new endpoint");
+        // Test commit with breaking change
+        create_commit(&repo, "feat(api)!: breaking change");
+        // Test commit without scope
+        create_commit(&repo, "docs: update readme");
 
         let linter = CommitLinter::new(temp_dir.path().to_str().unwrap()).unwrap();
         let issues = linter.check_commits_since_last_tag().unwrap();
-        assert!(
-            issues.is_empty(),
-            "Expected no issues for valid commit message"
-        );
+        assert!(issues.is_empty(), "Expected no issues but got: {:?}", issues);
     }
 
     #[test]
