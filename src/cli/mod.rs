@@ -1,26 +1,32 @@
 pub mod commands;
 
-use self::commands::Command;
+use self::commands::{amend, commit, lint, tag};
 use crate::error::CliError;
 use structopt::StructOpt;
 
-#[derive(Debug, StructOpt)]
-#[structopt(name = "committy", about = "A tool for managing git commits")]
-pub enum Cli {
-    /// Create a new commit following conventional commit format
-    Commit(commands::commit::CommitCommand),
-    /// Check if commits since the last tag follow conventional commit format
-    Lint(commands::lint::LintCommand),
-    /// Tag the current commit with a version
-    Tag(commands::tag::TagCommand),
+pub trait Command {
+    fn execute(&self) -> Result<(), CliError>;
 }
 
-impl Cli {
+#[derive(StructOpt)]
+pub enum CliCommand {
+    #[structopt(about = "Create a new commit")]
+    Commit(commit::CommitCommand),
+    #[structopt(about = "Amend the previous commit")]
+    Amend(amend::AmendCommand),
+    #[structopt(about = "Create a new tag")]
+    Tag(tag::TagCommand),
+    #[structopt(about = "Check commits since last tag for conventional format")]
+    Lint(lint::LintCommand),
+}
+
+impl CliCommand {
     pub fn execute(&self) -> Result<(), CliError> {
         match self {
-            Cli::Commit(cmd) => cmd.execute(),
-            Cli::Lint(cmd) => cmd.execute(),
-            Cli::Tag(cmd) => cmd.execute(),
+            CliCommand::Commit(cmd) => cmd.execute(),
+            CliCommand::Amend(cmd) => cmd.execute(),
+            CliCommand::Tag(cmd) => cmd.execute(),
+            CliCommand::Lint(cmd) => cmd.execute(),
         }
     }
 }

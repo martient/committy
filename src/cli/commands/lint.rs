@@ -1,4 +1,4 @@
-use super::Command;
+use crate::cli::Command;
 use crate::error::CliError;
 use crate::linter::CommitLinter;
 use structopt::StructOpt;

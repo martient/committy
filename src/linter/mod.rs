@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use git2::{ObjectType, Repository, Tag};
 use regex::Regex;
 
@@ -22,27 +22,38 @@ impl CommitLinter {
     pub fn check_commits_since_last_tag(&self) -> Result<Vec<CommitIssue>> {
         let mut issues = Vec::new();
 
-        // Get the last tag
-        let last_tag = self.get_last_tag()?;
-        let tag_commit = match last_tag {
-            Some(tag) => tag.target()?.peel_to_commit()?,
-            None => return Err(anyhow!("No tags found in repository")),
+        // Get HEAD commit
+        let head = match self.repo.head() {
+            Ok(head) => head,
+            Err(e) if e.code() == git2::ErrorCode::UnbornBranch => {
+                // Repository is empty, no commits to check
+                return Ok(Vec::new());
+            }
+            Err(e) => return Err(e.into()),
         };
 
-        // Get HEAD commit
-        let head = self.repo.head()?;
         let head_commit = head.peel_to_commit()?;
 
         // Create revwalk
         let mut revwalk = self.repo.revwalk()?;
         revwalk.push(head_commit.id())?;
-        revwalk.hide(tag_commit.id())?;
 
-        // Conventional commit regex
-        let commit_regex = Regex::new(
-            r"^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\([a-z0-9-]+\))?: .+",
-        )
-        .unwrap();
+        // If there's a tag, only check commits since that tag
+        if let Ok(Some(tag)) = self.get_last_tag() {
+            let tag_commit = tag.target()?.peel_to_commit()?;
+            revwalk.hide(tag_commit.id())?;
+        }
+
+        // Conventional commit regex parts
+        let type_pattern = format!(r"(?:{})", crate::config::COMMIT_TYPES.join("|"));
+        let scope_pattern = r"(?:\([a-z0-9-]+\))?";
+        let separator = r"\: ";
+        let description = r".+";
+        let full_pattern = format!(
+            "^{}{}{}{}$",
+            type_pattern, scope_pattern, separator, description
+        );
+        let commit_regex = Regex::new(&full_pattern).unwrap();
 
         // Check each commit
         for commit_id in revwalk {
@@ -50,37 +61,60 @@ impl CommitLinter {
             let commit = self.repo.find_commit(commit_id)?;
 
             let message = commit.message().unwrap_or("").trim();
+            let first_line = message.lines().next().unwrap_or("");
 
             // Check if commit message follows conventional commit format
-            if !commit_regex.is_match(message) {
+            if !commit_regex.is_match(first_line) {
+                let issue = if !first_line.contains(": ") {
+                    "Missing ': ' separator between type/scope and description".to_string()
+                } else if !crate::config::COMMIT_TYPES
+                    .iter()
+                    .any(|t| first_line.starts_with(t))
+                {
+                    format!(
+                        "Commit type must be one of: {}",
+                        crate::config::COMMIT_TYPES.join(", ")
+                    )
+                } else if first_line.contains("(") && !first_line.contains(")") {
+                    "Unclosed scope parenthesis".to_string()
+                } else if first_line.contains(")") && !first_line.contains("(") {
+                    "Unopened scope parenthesis".to_string()
+                } else if first_line.contains("()") {
+                    "Empty scope parenthesis".to_string()
+                } else {
+                    "Commit message format should be: <type>(<scope>): <description>".to_string()
+                };
+
                 issues.push(CommitIssue {
                     commit_id: commit_id.to_string(),
                     message: message.to_string(),
-                    issue: "Commit message does not follow conventional commit format".to_string(),
+                    issue,
                 });
                 continue;
             }
 
             // Check minimum length
-            if message.len() < 10 {
+            if first_line.len() < 10 {
                 issues.push(CommitIssue {
                     commit_id: commit_id.to_string(),
                     message: message.to_string(),
-                    issue: "Commit message is too short".to_string(),
+                    issue: format!(
+                        "Commit message is too short (got {} characters, minimum is 10)",
+                        first_line.len()
+                    ),
                 });
             }
 
             // Check maximum length of first line
-            if let Some(first_line) = message.lines().next() {
-                if first_line.len() > 72 {
-                    issues.push(CommitIssue {
-                        commit_id: commit_id.to_string(),
-                        message: message.to_string(),
-                        issue:
-                            "First line of commit message is too long (should be <= 72 characters)"
-                                .to_string(),
-                    });
-                }
+            if first_line.len() > 72 {
+                issues.push(CommitIssue {
+                    commit_id: commit_id.to_string(),
+                    message: message.to_string(),
+                    issue: format!(
+                        "First line of commit message is too long (got {} characters, maximum is 72)",
+                        first_line.len()
+                    ),
+                });
             }
         }
 
@@ -102,5 +136,121 @@ impl CommitLinter {
         tags.sort_by_key(|b| b.tagger().unwrap().when());
 
         Ok(tags.into_iter().next())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use git2::{Repository, Signature};
+
+    use tempfile::TempDir;
+
+    fn setup_test_repo() -> (TempDir, Repository) {
+        let temp_dir = TempDir::new().unwrap();
+        let repo = Repository::init(temp_dir.path()).unwrap();
+
+        // Configure test user
+        let mut config = repo.config().unwrap();
+        config.set_str("user.name", "Test User").unwrap();
+        config.set_str("user.email", "test@example.com").unwrap();
+
+        (temp_dir, repo)
+    }
+
+    fn create_commit(repo: &Repository, message: &str) {
+        let signature = Signature::now("Test User", "test@example.com").unwrap();
+        let tree_id = {
+            let mut index = repo.index().unwrap();
+            index.write_tree().unwrap()
+        };
+        let tree = repo.find_tree(tree_id).unwrap();
+
+        let parent_commit;
+        let parents = if let Ok(head) = repo.head() {
+            parent_commit = repo.find_commit(head.target().unwrap()).unwrap();
+            vec![&parent_commit]
+        } else {
+            vec![]
+        };
+
+        repo.commit(
+            Some("HEAD"),
+            &signature,
+            &signature,
+            message,
+            &tree,
+            &parents,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_valid_commit_message() {
+        let (temp_dir, repo) = setup_test_repo();
+        create_commit(&repo, "feat: add new feature");
+
+        let linter = CommitLinter::new(temp_dir.path().to_str().unwrap()).unwrap();
+        let issues = linter.check_commits_since_last_tag().unwrap();
+        assert!(
+            issues.is_empty(),
+            "Expected no issues for valid commit message"
+        );
+    }
+
+    #[test]
+    fn test_invalid_commit_type() {
+        let (temp_dir, repo) = setup_test_repo();
+        create_commit(&repo, "invalid: this should fail");
+
+        let linter = CommitLinter::new(temp_dir.path().to_str().unwrap()).unwrap();
+        let issues = linter.check_commits_since_last_tag().unwrap();
+        assert_eq!(issues.len(), 1);
+        assert!(issues[0].issue.contains("Commit type must be one of:"));
+    }
+
+    #[test]
+    fn test_missing_separator() {
+        let (temp_dir, repo) = setup_test_repo();
+        create_commit(&repo, "feat missing separator");
+
+        let linter = CommitLinter::new(temp_dir.path().to_str().unwrap()).unwrap();
+        let issues = linter.check_commits_since_last_tag().unwrap();
+        assert_eq!(issues.len(), 1);
+        assert!(issues[0].issue.contains("Missing ': ' separator"));
+    }
+
+    #[test]
+    fn test_invalid_scope_parentheses() {
+        let (temp_dir, repo) = setup_test_repo();
+        create_commit(&repo, "feat(: missing closing parenthesis");
+
+        let linter = CommitLinter::new(temp_dir.path().to_str().unwrap()).unwrap();
+        let issues = linter.check_commits_since_last_tag().unwrap();
+        assert_eq!(issues.len(), 1);
+        assert!(issues[0].issue.contains("Unclosed scope parenthesis"));
+    }
+
+    #[test]
+    fn test_empty_scope() {
+        let (temp_dir, repo) = setup_test_repo();
+        create_commit(&repo, "feat(): empty scope");
+
+        let linter = CommitLinter::new(temp_dir.path().to_str().unwrap()).unwrap();
+        let issues = linter.check_commits_since_last_tag().unwrap();
+        assert_eq!(issues.len(), 1);
+        assert!(issues[0].issue.contains("Empty scope parenthesis"));
+    }
+
+    #[test]
+    fn test_multiple_commits() {
+        let (temp_dir, repo) = setup_test_repo();
+        create_commit(&repo, "feat: valid commit");
+        create_commit(&repo, "invalid: invalid type");
+        create_commit(&repo, "fix(): empty scope");
+
+        let linter = CommitLinter::new(temp_dir.path().to_str().unwrap()).unwrap();
+        let issues = linter.check_commits_since_last_tag().unwrap();
+        assert_eq!(issues.len(), 2);
     }
 }
