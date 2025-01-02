@@ -12,10 +12,10 @@ pub enum CliError {
     #[error("Input error: {0}")]
     InputError(String),
 
-    #[error("No staged changes found")]
+    #[error("No staged changes found\nFor help, run 'committy --help'")]
     NoStagedChanges,
 
-    #[error("Please commit your staged changes before doing that")]
+    #[error("Please commit your staged changes before doing that\nFor help, run 'committy tag --help'")]
     StagedChanges,
 
     #[error("{0}")]
