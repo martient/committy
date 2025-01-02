@@ -364,7 +364,6 @@ impl TagGenerator {
             .into_iter()
             .map(|p| p.to_string_lossy().into_owned())
             .collect();
-
         Ok(updated_files)
     }
 

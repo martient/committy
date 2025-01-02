@@ -24,7 +24,6 @@ impl VersionFile {
         }
 
         let content = std::fs::read_to_string(&self.path).map_err(CliError::IoError)?;
-
         let version_without_v = new_version.trim_start_matches('v');
         let new_content = self
             .pattern
