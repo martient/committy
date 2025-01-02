@@ -239,3 +239,68 @@ version = "1.0.0""#,
         .expect("Failed to read pyproject.toml");
     assert!(pyproject_toml.contains("version = \"2.0.0\""));
 }
+
+#[test]
+fn test_version_with_v_prefix() {
+    let temp_dir = setup_version_files();
+    let mut version_manager = VersionManager::new();
+
+    version_manager
+        .add_version_file(
+            temp_dir.path().join("Cargo.toml"),
+            r#"version\s*=\s*"[^"]*""#,
+            r#"version = "{}""#,
+        )
+        .expect("Failed to add Cargo.toml");
+
+    // Update with v-prefixed version
+    let updated_files = version_manager
+        .update_all_versions("v2.0.0")
+        .expect("Failed to update versions");
+
+    assert_eq!(updated_files.len(), 1);
+
+    // Verify the v prefix was stripped
+    let cargo_contents =
+        fs::read_to_string(temp_dir.path().join("Cargo.toml")).expect("Failed to read Cargo.toml");
+    assert!(cargo_contents.contains("version = \"2.0.0\""));
+}
+
+#[test]
+fn test_file_with_multiple_versions() {
+    let temp_dir = tempdir().expect("Failed to create temp directory");
+    let test_file = temp_dir.path().join("test.json");
+    
+    // Create a file with multiple version fields
+    fs::write(
+        &test_file,
+        r#"{
+  "version": "1.0.0",
+  "dependencies": {
+    "some-pkg": {
+      "version": "1.0.0"
+    }
+  }
+}"#,
+    ).expect("Failed to write test file");
+
+    let mut version_manager = VersionManager::new();
+    version_manager
+        .add_version_file(
+            test_file.clone(),
+            r#""version"\s*:\s*"[^"]*""#,
+            r#""version": "{}""#,
+        )
+        .expect("Failed to add test file");
+
+    let updated_files = version_manager
+        .update_all_versions("2.0.0")
+        .expect("Failed to update versions");
+
+    assert_eq!(updated_files.len(), 1);
+
+    // Verify both versions were updated
+    let contents = fs::read_to_string(test_file).expect("Failed to read test file");
+    let version_count = contents.matches("\"version\": \"2.0.0\"").count();
+    assert_eq!(version_count, 2, "Both version fields should be updated");
+}
