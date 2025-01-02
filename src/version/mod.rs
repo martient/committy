@@ -42,6 +42,12 @@ pub struct VersionManager {
     version_files: Vec<VersionFile>,
 }
 
+impl Default for VersionManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl VersionManager {
     pub fn new() -> Self {
         Self {
