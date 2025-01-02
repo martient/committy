@@ -45,6 +45,5 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("Error: {}", e);
         std::process::exit(1);
     }
-
     Ok(())
 }
