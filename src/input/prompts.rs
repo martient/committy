@@ -1,6 +1,4 @@
-use super::validation::{
-    auto_correct_scope, validate_scope, validate_short_message,
-};
+use super::validation::{auto_correct_scope, validate_scope, validate_short_message};
 use crate::config::{COMMIT_TYPES, MAX_SHORT_DESCRIPTION_LENGTH};
 use crate::error::CliError;
 use inquire::validator::Validation;
@@ -24,7 +22,7 @@ pub fn confirm_breaking_change() -> Result<bool, CliError> {
 
 pub fn validate_scope_input(scope: &str) -> Result<String, CliError> {
     // First validate the scope
-    validate_scope(scope).map_err(|e| CliError::InputError(e))?;
+    validate_scope(scope).map_err(CliError::InputError)?;
 
     let corrected = auto_correct_scope(scope);
     if corrected != scope {
