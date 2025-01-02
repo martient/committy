@@ -20,7 +20,6 @@ use crate::cli::CliCommand;
     about = env!("CARGO_PKG_DESCRIPTION"),
     version = env!("CARGO_PKG_VERSION")
 )]
-
 struct Opt {
     #[structopt(subcommand)]
     cmd: Option<CliCommand>,
