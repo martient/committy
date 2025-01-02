@@ -47,7 +47,7 @@ impl CommitLinter {
         // Conventional commit regex parts
         let type_pattern = format!(r"(?:{})", crate::config::COMMIT_TYPES.join("|"));
         let scope_pattern = r"(?:\([a-z0-9-]+\))?";
-        let breaking_change = r"(?:!)?";  // Optional breaking change indicator
+        let breaking_change = r"(?:!)?"; // Optional breaking change indicator
         let separator = r"\: ";
         let description = r".+";
         let full_pattern = format!(
@@ -199,7 +199,11 @@ mod tests {
 
         let linter = CommitLinter::new(temp_dir.path().to_str().unwrap()).unwrap();
         let issues = linter.check_commits_since_last_tag().unwrap();
-        assert!(issues.is_empty(), "Expected no issues but got: {:?}", issues);
+        assert!(
+            issues.is_empty(),
+            "Expected no issues but got: {:?}",
+            issues
+        );
     }
 
     #[test]
