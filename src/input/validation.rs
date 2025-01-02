@@ -48,10 +48,30 @@ pub fn suggest_commit_type(input: &str) -> Option<&'static str> {
 }
 
 pub fn auto_correct_scope(input: &str) -> String {
-    input
-        .chars()
-        .filter(|&c| c.is_ascii_alphanumeric() || c == '-')
-        .collect()
+    if input.trim().is_empty() {
+        return String::new();
+    }
+
+    let mut result = String::new();
+    let mut last_was_separator = true; // To avoid starting with a hyphen
+
+    for c in input.trim().chars() {
+        if c.is_ascii_alphanumeric() {
+            result.push(c);
+            last_was_separator = false;
+        } else if !last_was_separator {
+            // Convert any non-alphanumeric character to a hyphen, but only if we haven't just added one
+            result.push('-');
+            last_was_separator = true;
+        }
+    }
+
+    // Remove trailing hyphen if exists
+    if result.ends_with('-') {
+        result.pop();
+    }
+
+    result
 }
 
 pub fn validate_scope(input: &str) -> Result<(), String> {
@@ -92,9 +112,9 @@ mod tests {
         assert_eq!(auto_correct_scope("api"), "api");
 
         // Needs correction
-        assert_eq!(auto_correct_scope("user@auth"), "userauth");
-        assert_eq!(auto_correct_scope("api!service"), "apiservice");
-        assert_eq!(auto_correct_scope("front_end"), "frontend");
+        assert_eq!(auto_correct_scope("user@auth"), "user-auth");
+        assert_eq!(auto_correct_scope("api!service"), "api-service");
+        assert_eq!(auto_correct_scope("front_end"), "front-end");
 
         // Empty or special cases
         assert_eq!(auto_correct_scope(""), "");
@@ -111,7 +131,7 @@ mod tests {
         // Invalid scopes
         let invalid_result = validate_scope("user@service");
         assert!(invalid_result.is_err());
-        assert!(invalid_result.unwrap_err().contains("userservice"));
+        assert!(invalid_result.unwrap_err().contains("user-service"));
 
         let invalid_result = validate_scope("api!!!");
         assert!(invalid_result.is_err());

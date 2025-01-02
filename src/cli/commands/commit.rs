@@ -53,7 +53,7 @@ impl Command for CommitCommand {
         let commit_type = if let Some(type_) = &self.type_ {
             if let Some(suggested) = suggest_commit_type(type_) {
                 if suggested != type_ {
-                    println!(
+                    info!(
                         "Auto-correcting commit type from '{}' to '{}'",
                         type_, suggested
                     );
@@ -86,12 +86,17 @@ impl Command for CommitCommand {
 
         // Handle scope with auto-correction
         let scope = if let Some(scope) = &self.scope {
-            let corrected = auto_correct_scope(scope);
-            if corrected != *scope {
-                println!("Auto-correcting scope from '{}' to '{}'", scope, corrected);
-                debug!("Auto-corrected scope from '{}' to '{}'", scope, corrected);
+            if !self.non_interactive {
+                // In interactive mode, validate and potentially correct the scope
+                input::validate_scope_input(scope)?
+            } else {
+                // In non-interactive mode, apply corrections automatically
+                let corrected = auto_correct_scope(scope);
+                if corrected != *scope {
+                    info!("Auto-correcting scope from '{}' to '{}'", scope, corrected);
+                }
+                corrected
             }
-            corrected
         } else if !self.non_interactive {
             input::input_scope()?
         } else {
@@ -124,7 +129,7 @@ impl Command for CommitCommand {
         );
 
         // Print the commit message
-        println!("{}", full_message);
+        // println!("{}", full_message);
         debug!("Formatted commit message: {}", full_message);
 
         git::commit_changes(&full_message, self.amend)?;

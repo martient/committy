@@ -83,7 +83,7 @@ fn test_commit_message_formatting() {
     // Test commit with scope and breaking change
     let mut cmd = Command::cargo_bin("committy").unwrap();
     cmd.current_dir(&temp_dir)
-        .env("RUST_LOG", "off")
+        .env("RUST_LOG", "info")
         .arg("commit")
         .arg("--non-interactive")
         .arg("--type")
@@ -96,8 +96,7 @@ fn test_commit_message_formatting() {
         .arg("--long-message")
         .arg("Detailed description of the change")
         .assert()
-        .success()
-        .stdout(predicate::str::contains("feat(test)!: Test commit"));
+        .success();
 
     // Verify git log
     let git_log = StdCommand::new("git")
@@ -181,7 +180,7 @@ fn test_commit_with_amend() {
     // Initial commit
     let mut cmd = Command::cargo_bin("committy").unwrap();
     cmd.current_dir(&temp_dir)
-        .env("RUST_LOG", "off")
+        .env("RUST_LOG", "info")
         .arg("commit")
         .arg("--non-interactive")
         .arg("--type")
@@ -202,7 +201,7 @@ fn test_commit_with_amend() {
     // Amend commit with non-interactive mode
     let mut cmd = Command::cargo_bin("committy").unwrap();
     cmd.current_dir(&temp_dir)
-        .env("RUST_LOG", "off")
+        .env("RUST_LOG", "info")
         .arg("commit")
         .arg("--non-interactive")
         .arg("--type")
@@ -211,8 +210,7 @@ fn test_commit_with_amend() {
         .arg("Amended commit")
         .arg("--amend")
         .assert()
-        .success()
-        .stdout(predicate::str::contains("feat: Amended commit"));
+        .success();
 
     // Verify git log shows only one commit
     let git_log = StdCommand::new("git")

@@ -5,6 +5,7 @@ use crate::config::{COMMIT_TYPES, MAX_SHORT_DESCRIPTION_LENGTH};
 use crate::error::CliError;
 use inquire::validator::Validation;
 use inquire::{Confirm, Select, Text};
+use log::info;
 
 pub fn select_commit_type() -> Result<String, CliError> {
     let commit_type = Select::new("Select the type of commit:", COMMIT_TYPES.to_vec())
@@ -21,26 +22,38 @@ pub fn confirm_breaking_change() -> Result<bool, CliError> {
         .map_err(|e| CliError::InputError(e.to_string()))
 }
 
+pub fn validate_scope_input(scope: &str) -> Result<String, CliError> {
+    // First validate the scope
+    validate_scope(scope).map_err(|e| CliError::InputError(e))?;
+
+    let corrected = auto_correct_scope(scope);
+    if corrected != scope {
+        info!("Suggested correction: '{}' -> '{}'", scope, corrected);
+        if Confirm::new("Do you want to apply this correction?")
+            .with_default(true)
+            .prompt()
+            .map_err(|e| CliError::InputError(e.to_string()))?
+        {
+            info!("Applied correction: '{}'", corrected);
+            Ok(corrected)
+        } else {
+            info!("Keeping original: '{}'", scope);
+            Ok(scope.to_string())
+        }
+    } else {
+        Ok(scope.to_string())
+    }
+}
+
 pub fn input_scope() -> Result<String, CliError> {
     let scope = Text::new("Enter the scope of the commit (optional):")
-        .with_validator(|s: &str| {
-            validate_scope(s)
-                .map_err(|e| e.into())
-                .map(|_| Validation::Valid)
-        })
         .prompt()
         .map_err(|e| CliError::InputError(e.to_string()))?;
 
-    if !scope.is_empty() {
-        let corrected = auto_correct_scope(&scope);
-        if corrected != scope {
-            println!("Auto-correcting scope from '{}' to '{}'", scope, corrected);
-            Ok(corrected)
-        } else {
-            Ok(scope)
-        }
-    } else {
+    if scope.is_empty() {
         Ok(scope)
+    } else {
+        validate_scope_input(&scope)
     }
 }
 
@@ -89,12 +102,31 @@ mod tests {
         // Test auto-correction of invalid characters
         let scope = "user@service";
         let result = auto_correct_scope(scope);
-        assert_eq!(result, "userservice");
+        assert_eq!(result, "user-service");
 
         // Test valid scope
         let scope = "user-service";
         let result = auto_correct_scope(scope);
         assert_eq!(result, "user-service");
+
+        // Test empty scope
+        let scope = "";
+        let result = auto_correct_scope(scope);
+        assert_eq!(result, "");
+
+        // Test whitespace scope
+        let scope = "user service";
+        let result = auto_correct_scope(scope);
+        assert_eq!(result, "user-service");
+
+        // Test whitespace scope with trimming
+        let scope = "  user service  ";
+        let result = auto_correct_scope(scope);
+        assert_eq!(result, "user-service");
+
+        // Note: We can't directly test the interactive confirmation here
+        // as it requires user input. The integration tests will handle this
+        // using the --non-interactive flag.
     }
 
     #[test]

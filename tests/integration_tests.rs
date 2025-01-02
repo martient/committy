@@ -65,7 +65,7 @@ fn test_commit_command_with_valid_input() {
 
     let mut cmd = Command::cargo_bin("committy").unwrap();
     cmd.current_dir(&temp_dir)
-        .env("RUST_LOG", "off")
+        .env("RUST_LOG", "info")
         .arg("commit")
         .arg("--non-interactive")
         .arg("--type")
@@ -75,10 +75,17 @@ fn test_commit_command_with_valid_input() {
         .arg("--message")
         .arg("Add authentication feature")
         .assert()
-        .success()
-        .stdout(predicate::str::contains(
-            "feat(auth): Add authentication feature",
-        ));
+        .success();
+
+    // Verify git log
+    let git_log = StdCommand::new("git")
+        .args(["log", "--format=%B", "-n", "1"])
+        .current_dir(&temp_dir)
+        .output()
+        .expect("Failed to get git log");
+
+    let log_message = String::from_utf8_lossy(&git_log.stdout);
+    assert!(log_message.contains("feat(auth): Add authentication feature"));
 
     cleanup(temp_dir);
 }
@@ -89,7 +96,7 @@ fn test_commit_command_with_auto_correction() {
 
     let mut cmd = Command::cargo_bin("committy").unwrap();
     cmd.current_dir(&temp_dir)
-        .env("RUST_LOG", "off")
+        .env("RUST_LOG", "info")
         .arg("commit")
         .arg("--non-interactive")
         .arg("--type")
@@ -99,12 +106,17 @@ fn test_commit_command_with_auto_correction() {
         .arg("--message")
         .arg("Add user service")
         .assert()
-        .success()
-        .stdout(predicate::str::contains("Auto-correcting commit type"))
-        .stdout(predicate::str::contains("Auto-correcting scope"))
-        .stdout(predicate::str::contains(
-            "feat(userservice): Add user service",
-        ));
+        .success();
+
+    // Verify git log
+    let git_log = StdCommand::new("git")
+        .args(["log", "--format=%B", "-n", "1"])
+        .current_dir(&temp_dir)
+        .output()
+        .expect("Failed to get git log");
+
+    let log_message = String::from_utf8_lossy(&git_log.stdout);
+    assert!(log_message.contains("feat(user-service): Add user service"));
 
     cleanup(temp_dir);
 }
@@ -115,7 +127,7 @@ fn test_commit_command_with_invalid_input() {
 
     let mut cmd = Command::cargo_bin("committy").unwrap();
     cmd.current_dir(&temp_dir)
-        .env("RUST_LOG", "off")
+        .env("RUST_LOG", "info")
         .arg("commit")
         .arg("--non-interactive")
         .arg("--type")
@@ -135,7 +147,7 @@ fn test_commit_with_breaking_change() {
 
     let mut cmd = Command::cargo_bin("committy").unwrap();
     cmd.current_dir(&temp_dir)
-        .env("RUST_LOG", "off")
+        .env("RUST_LOG", "info")
         .arg("commit")
         .arg("--non-interactive")
         .arg("--type")
@@ -146,10 +158,17 @@ fn test_commit_with_breaking_change() {
         .arg("--message")
         .arg("Breaking change in authentication")
         .assert()
-        .success()
-        .stdout(predicate::str::contains(
-            "feat(auth)!: Breaking change in authentication",
-        ));
+        .success();
+
+    // Verify git log
+    let git_log = StdCommand::new("git")
+        .args(["log", "--format=%B", "-n", "1"])
+        .current_dir(&temp_dir)
+        .output()
+        .expect("Failed to get git log");
+
+    let log_message = String::from_utf8_lossy(&git_log.stdout);
+    assert!(log_message.contains("feat(auth)!: Breaking change in authentication"));
 
     cleanup(temp_dir);
 }

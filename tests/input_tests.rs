@@ -86,11 +86,11 @@ fn test_message_length_validation() {
 
 #[test]
 fn test_scope_auto_correction() {
-    // Test special characters removal
-    assert_eq!(auto_correct_scope("user@service"), "userservice");
+    // Test special characters conversion to hyphens
+    assert_eq!(auto_correct_scope("user@service"), "user-service");
     assert_eq!(auto_correct_scope("api!!!"), "api");
-    assert_eq!(auto_correct_scope("test space"), "testspace");
-    assert_eq!(auto_correct_scope("special#chars"), "specialchars");
+    assert_eq!(auto_correct_scope("test space"), "test-space");
+    assert_eq!(auto_correct_scope("special#chars"), "special-chars");
     assert_eq!(auto_correct_scope("emoji🚀"), "emoji");
 
     // Test case preservation
@@ -100,10 +100,9 @@ fn test_scope_auto_correction() {
     // Test valid input preservation
     assert_eq!(auto_correct_scope("api"), "api");
     assert_eq!(auto_correct_scope("user-service"), "user-service");
-    assert_eq!(auto_correct_scope("123"), "123");
+    assert_eq!(auto_correct_scope("auth-v2"), "auth-v2");
 
-    // Test empty and whitespace
-    assert_eq!(auto_correct_scope(""), "");
-    assert_eq!(auto_correct_scope("  "), "");
-    assert_eq!(auto_correct_scope(" - "), "-");
+    // Test whitespace handling
+    assert_eq!(auto_correct_scope("  test  space  "), "test-space");
+    assert_eq!(auto_correct_scope("multiple   spaces"), "multiple-spaces");
 }
