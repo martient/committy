@@ -1,7 +1,9 @@
 mod common;
 
+use committy::git::{TagGenerator, TagGeneratorOptions};
 use committy::version::VersionManager;
 use std::fs;
+use structopt::StructOpt;
 use tempfile::tempdir;
 
 fn setup_version_files() -> tempfile::TempDir {
@@ -270,7 +272,7 @@ fn test_version_with_v_prefix() {
 fn test_file_with_multiple_versions() {
     let temp_dir = tempdir().expect("Failed to create temp directory");
     let test_file = temp_dir.path().join("test.json");
-    
+
     // Create a file with multiple version fields
     fs::write(
         &test_file,
@@ -282,7 +284,8 @@ fn test_file_with_multiple_versions() {
     }
   }
 }"#,
-    ).expect("Failed to write test file");
+    )
+    .expect("Failed to write test file");
 
     let mut version_manager = VersionManager::new();
     version_manager
@@ -303,4 +306,149 @@ fn test_file_with_multiple_versions() {
     let contents = fs::read_to_string(test_file).expect("Failed to read test file");
     let version_count = contents.matches("\"version\": \"2.0.0\"").count();
     assert_eq!(version_count, 2, "Both version fields should be updated");
+}
+
+#[test]
+fn test_version_bump_with_commit() {
+    // Create temporary directory
+    let temp_path = tempfile::tempdir().expect("Failed to create temp dir");
+    let temp_path = temp_path.path();
+
+    // Initialize git repository
+    let repo = git2::Repository::init(temp_path).expect("Failed to init repo");
+    let sig =
+        git2::Signature::now("Test User", "test@example.com").expect("Failed to create signature");
+
+    // Set up git config
+    let mut config = repo.config().expect("Failed to get config");
+    config
+        .set_str("user.name", "Test User")
+        .expect("Failed to set user.name");
+    config
+        .set_str("user.email", "test@example.com")
+        .expect("Failed to set user.email");
+
+    // Create version files
+    let cargo_toml = temp_path.join("Cargo.toml");
+    let package_json = temp_path.join("package.json");
+
+    std::fs::write(
+        &cargo_toml,
+        r#"[package]
+name = "test-package"
+version = "1.0.0"
+"#,
+    )
+    .expect("Failed to write Cargo.toml");
+
+    std::fs::write(
+        &package_json,
+        r#"{
+  "name": "test-package",
+  "version": "1.0.0"
+}"#,
+    )
+    .expect("Failed to write package.json");
+
+    // Add files to git
+    let mut index = repo.index().expect("Failed to get index");
+    index
+        .add_path(std::path::Path::new("Cargo.toml"))
+        .expect("Failed to add Cargo.toml");
+    index
+        .add_path(std::path::Path::new("package.json"))
+        .expect("Failed to add package.json");
+    let tree_id = index.write_tree().expect("Failed to write tree");
+    let tree = repo.find_tree(tree_id).expect("Failed to find tree");
+
+    // Create initial commit
+    let initial_commit = repo
+        .commit(Some("HEAD"), &sig, &sig, "Initial commit", &tree, &[])
+        .expect("Failed to create initial commit");
+
+    // Create and checkout main branch
+    repo.branch("main", &repo.find_commit(initial_commit).unwrap(), false)
+        .expect("Failed to create main branch");
+    repo.set_head("refs/heads/main")
+        .expect("Failed to set HEAD to main");
+
+    // Register version files
+    let mut version_manager = VersionManager::new();
+    version_manager
+        .add_version_file(&cargo_toml, r#"version\s*=\s*"[^"]*""#, r#"version = "{}""#)
+        .expect("Failed to add Cargo.toml");
+
+    version_manager
+        .add_version_file(
+            &package_json,
+            r#""version"\s*:\s*"[^"]*""#,
+            r#""version": "{}""#,
+        )
+        .expect("Failed to add package.json");
+
+    // Create tag generator with version bump enabled
+    let options = TagGeneratorOptions::from_iter_safe(&[
+        "test",
+        "--default-bump",
+        "minor",
+        "--source",
+        &temp_path.to_string_lossy(),
+        "--force-without-change",
+        "--not-publish",
+        "--release-branches",
+        "main,master",
+        "--initial-version",
+        "1.0.0",
+        "--prerelease-suffix",
+        "beta",
+        "--none-string-token",
+        "#none",
+    ])
+    .expect("Failed to create options");
+
+    let tag_generator = TagGenerator::new(options, true);
+
+    // Run the tag generator
+    tag_generator.run().expect("Failed to run tag generator");
+
+    // Verify version files were updated
+    let cargo_toml_content =
+        std::fs::read_to_string(&cargo_toml).expect("Failed to read Cargo.toml");
+    let package_json_content =
+        std::fs::read_to_string(&package_json).expect("Failed to read package.json");
+
+    assert!(
+        cargo_toml_content.contains(r#"version = "1.1.0""#),
+        "Cargo.toml version not updated"
+    );
+    assert!(
+        package_json_content.contains(r#""version": "1.1.0""#),
+        "package.json version not updated"
+    );
+
+    // Verify commit was created
+    let head_commit = repo
+        .head()
+        .expect("Failed to get HEAD")
+        .peel_to_commit()
+        .expect("Failed to get HEAD commit");
+    let commit_message = head_commit.message().unwrap_or("");
+    println!("Actual commit message: {}", commit_message);
+    assert!(
+        commit_message.contains("chore: bump version to 1.1.0"),
+        "Commit message incorrect"
+    );
+
+    // Verify tag was created and points to the version bump commit
+    let tag_ref = repo
+        .find_reference("refs/tags/v1.1.0")
+        .expect("Failed to find tag reference");
+    let tag_commit = tag_ref
+        .peel_to_commit()
+        .expect("Failed to get tag's commit");
+    assert_eq!(
+        tag_commit.id(),
+        head_commit.id(),
+        "Tag does not point to version bump commit"
+    );
 }
