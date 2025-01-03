@@ -3,13 +3,16 @@ mod config;
 mod error;
 mod git;
 mod input;
+mod linter;
 mod release;
 mod version;
 
-use cli::commands::{commit::CommitCommand, CliCommand};
 use config::SENTRY_DSN;
 use env_logger::{Builder, Env};
 use structopt::StructOpt;
+
+use crate::cli::commands::commit::CommitCommand;
+use crate::cli::CliCommand;
 
 #[derive(StructOpt)]
 #[structopt(
@@ -17,7 +20,6 @@ use structopt::StructOpt;
     about = env!("CARGO_PKG_DESCRIPTION"),
     version = env!("CARGO_PKG_VERSION")
 )]
-
 struct Opt {
     #[structopt(subcommand)]
     cmd: Option<CliCommand>,
