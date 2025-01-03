@@ -1,6 +1,6 @@
 [package]
 name = "committy"
-version = "1.1.13"
+version = "1.2.0-beta.7"
 authors = ["Arnaud (Martient) Leherpeur <arnaud.leherpeur@taultek.com>"]
 edition = "2021"
 description = "🚀 Generate clear, concise, and structured commit messages effortlessly"
@@ -11,21 +11,21 @@ include = ["/src", "LICENSE"]
 
 
 [dependencies]
-structopt = "0.3"
+structopt = "0.3.26"
 inquire = "0.7.5"
-git2 = "0.19.0"
-thiserror = "1.0.64"
-anyhow = "1.0"
-sentry = "0.34.0"
-chrono = "0.4.38"
-semver = "1.0.23"
-regex = "1.11.0"
+git2 = {version = "0.19.0", features = ["vendored-openssl"]}
+thiserror = "2.0.9"
+anyhow = "1.0.95"
+sentry = "0.35.0"
+chrono = "0.4.39"
+semver = "1.0.24"
+regex = "1.11.1"
 log = "0.4.22"
-env_logger = "0.11.5"
-openssl = { version = "0.10.68", features = ["vendored"] }
+env_logger = "0.11.6"
+strsim = "0.10.0"
 
 
 [dev-dependencies]
-assert_cmd = "2.0"
-predicates = "3.0"
-tempfile = "3.13.0"
+assert_cmd = "2.0.12"
+predicates = "3.0.4"
+tempfile = "3.14.0"

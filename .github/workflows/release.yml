@@ -9,7 +9,9 @@ permissions:
 on:
   push:
     tags:
-      - "v*"
+      # - "v*"
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
 
 jobs:
   release:
@@ -28,10 +30,10 @@ jobs:
             target: aarch64-unknown-linux-gnu
             suffix: ""
             asset_suffix: linux-arm64
-          # - os: windows-latest # REMOVE UNTIL WE FIND A SOLUTION REGARDING OPEN SSL
-          #   target: x86_64-pc-windows-msvc
-          #   suffix: .exe
-          #   asset_suffix: windows-amd64.exe
+          - os: windows-latest # REMOVE UNTIL WE FIND A SOLUTION REGARDING OPEN SSL
+            target: x86_64-pc-windows-msvc
+            suffix: .exe
+            asset_suffix: windows-amd64.exe
           - os: macos-latest
             target: x86_64-apple-darwin
             suffix: ""
@@ -77,12 +79,7 @@ jobs:
         shell: bash
         if: runner.os == 'Windows'
         run: |
-          choco install openssl strawberryperl refreshenv --no-progress
-          refreshenv
-          cpan Locale::Maketext::Simple
-          echo "OPENSSL_DIR=C:\Program Files\OpenSSL-Win64" >> $GITHUB_ENV
-          echo "OPENSSL_LIB_DIR=C:\Program Files\OpenSSL-Win64\lib" >> $GITHUB_ENV
-          echo "OPENSSL_INCLUDE_DIR=C:\Program Files\OpenSSL-Win64\include" >> $GITHUB_ENV
+          choco install strawberryperl make
 
       - name: Install cross-compilation tools
         if: matrix.target == 'aarch64-unknown-linux-gnu'
@@ -122,7 +119,10 @@ jobs:
           if [[ "$RUNNER_OS" == "macOS" ]]; then
             shasum -a 256 "${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz" > "${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz.sha256"
           elif [[ "$RUNNER_OS" == "Windows" ]]; then
-            certutil -hashfile "${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz" SHA256 | findstr /v "hash" > "${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz.sha256"
+            # certutil -hashfile "${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz" SHA256 | findstr /v "hash" > "${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz.sha256"
+            # certutil -hashfile "${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz" SHA256 | findstr /v /c:"SHA256 hash of" /c:"CertUtil" > "${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz.sha256"
+            powershell -Command "(Get-FileHash -Algorithm SHA256 '${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz').Hash.ToLower() + '  ${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz'" > "${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz.sha256"
+            # certutil -hashfile "committy-windows-amd64.exe.tar.gz" SHA256 | findstr /v /c:"SHA256 hash of" /c:"CertUtil" > "committy-windows-amd64.exe.tar.gz.sha256"
           else
             sha256sum "${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz" > "${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz.sha256"
           fi

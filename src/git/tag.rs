@@ -1,5 +1,6 @@
 use std::env;
 
+use crate::version::VersionManager;
 use crate::{config, error::CliError};
 use git2::{FetchOptions, Oid, RemoteCallbacks, Repository};
 use log::{debug, error, info};
@@ -52,7 +53,7 @@ pub struct TagGeneratorOptions {
     none_string_token: String,
 
     #[structopt(long, help = "Force tag creation even without changes")]
-    force_without_changes: bool,
+    force_without_change: bool,
 
     #[structopt(long, help = "Custom tag message")]
     tag_message: Option<String>,
@@ -72,13 +73,14 @@ pub struct TagGenerator {
     prerelease: bool,
     suffix: String,
     none_string_token: String,
-    force_without_changes: bool,
+    force_without_change: bool,
     tag_message: String,
     not_publish: bool,
+    bump_config_files: bool,
 }
 
 impl TagGenerator {
-    pub fn new(options: TagGeneratorOptions) -> Self {
+    pub fn new(options: TagGeneratorOptions, allow_bump_config_files: bool) -> Self {
         TagGenerator {
             default_bump: options.default_bump,
             not_with_v: options.not_with_v,
@@ -94,9 +96,10 @@ impl TagGenerator {
             prerelease: options.prerelease,
             suffix: options.prerelease_suffix,
             none_string_token: options.none_string_token,
-            force_without_changes: options.force_without_changes,
+            force_without_change: options.force_without_change,
             tag_message: options.tag_message.unwrap_or_default(),
             not_publish: options.not_publish,
+            bump_config_files: allow_bump_config_files,
         }
     }
 
@@ -143,6 +146,16 @@ impl TagGenerator {
             return Ok(());
         }
 
+        // Update version files and commit changes
+        if self.bump_config_files {
+            let updated_files = self.update_versions(&new_tag)?;
+            if !updated_files.is_empty() {
+                info!("📝 Updated version in files: {}", updated_files.join(", "));
+                self.commit_version_changes(&repo, &new_tag, &updated_files)?;
+                info!("✅ Committed version changes");
+            }
+        }
+
         self.create_and_push_tag(&repo, &new_tag)?;
         Ok(())
     }
@@ -167,37 +180,47 @@ impl TagGenerator {
 
     fn fetch_tags(&self, repo: &Repository) -> Result<(), CliError> {
         debug!("Fetching tags from remote");
-        let mut remote = repo.find_remote("origin")?;
+        match repo.find_remote("origin") {
+            Ok(mut remote) => {
+                let mut callbacks = RemoteCallbacks::new();
 
-        let mut callbacks = RemoteCallbacks::new();
+                callbacks.credentials(|_url, username_from_url, _allowed_types| {
+                    git2::Cred::ssh_key(
+                        username_from_url.unwrap_or("git"),
+                        None,
+                        std::path::Path::new(&format!(
+                            "{}/.ssh/id_rsa",
+                            std::env::var("HOME").unwrap()
+                        )),
+                        None,
+                    )
+                });
 
-        callbacks.credentials(|_url, username_from_url, _allowed_types| {
-            git2::Cred::ssh_key(
-                username_from_url.unwrap_or("git"),
-                None,
-                std::path::Path::new(&format!("{}/.ssh/id_rsa", std::env::var("HOME").unwrap())),
-                None,
-            )
-        });
+                let mut fetch_options = FetchOptions::new();
+                fetch_options.remote_callbacks(callbacks);
 
-        let mut fetch_options = FetchOptions::new();
-        fetch_options.remote_callbacks(callbacks);
-
-        remote.fetch(&["refs/tags/*:refs/tags/*"], Some(&mut fetch_options), None)
-            .map_err(|e| {
-                error!("Failed to fetch tags from remote: {}", e);
-                match e.code() {
-                    git2::ErrorCode::Auth => {
-                        error!("Authentication error. Please ensure your credentials are set up correctly.");
-                        error!("For SSH: Ensure your SSH key is added to the ssh-agent or located at ~/.ssh/id_rsa");
-                        error!("For HTTPS: Check your Git credential helper or use a personal access token.");
-                        error!("Debug info: SSH_AUTH_SOCK={:?}, HOME={:?}", env::var("SSH_AUTH_SOCK"), env::var("HOME"));
-                        error!("Remote URL: {:?}", remote.url());
-                    },
-                    _ => error!("Unexpected error occurred. Please check your network connection and repository permissions."),
-                }
-                CliError::from(e)
-            })
+                remote.fetch(&["refs/tags/*:refs/tags/*"], Some(&mut fetch_options), None)
+                    .map_err(|e| {
+                        error!("Failed to fetch tags from remote: {}", e);
+                        match e.code() {
+                            git2::ErrorCode::Auth => {
+                                error!("Authentication error. Please ensure your credentials are set up correctly.");
+                                error!("For SSH: Ensure your SSH key is added to the ssh-agent or located at ~/.ssh/id_rsa");
+                                error!("For HTTPS: Check your Git credential helper or use a personal access token.");
+                                error!("Debug info: SSH_AUTH_SOCK={:?}, HOME={:?}", env::var("SSH_AUTH_SOCK"), env::var("HOME"));
+                                error!("Remote URL: {:?}", remote.url());
+                            },
+                            _ => error!("Unexpected error occurred. Please check your network connection and repository permissions."),
+                        }
+                        CliError::from(e)
+                    })
+            }
+            Err(e) if e.code() == git2::ErrorCode::NotFound => {
+                debug!("No remote 'origin' found, skipping tag fetch");
+                Ok(())
+            }
+            Err(e) => Err(CliError::from(e)),
+        }
     }
 
     fn get_latest_tags(&self, repo: &Repository) -> Result<(String, String), CliError> {
@@ -248,11 +271,12 @@ impl TagGenerator {
         }
     }
 
-    fn get_commit_for_tag(&self, repo: &Repository, tag: &str) -> Result<Oid, CliError> {
-        repo.revparse_single(tag)?
-            .peel_to_commit()
-            .map(|commit| commit.id())
-            .map_err(CliError::from)
+    fn get_commit_for_tag(&self, repo: &Repository, tag: &str) -> Result<Option<Oid>, CliError> {
+        Ok(repo
+            .revparse_single(tag)
+            .ok()
+            .and_then(|obj| obj.peel_to_commit().ok())
+            .map(|commit| commit.id()))
     }
 
     fn get_current_commit(&self, repo: &Repository) -> Result<Oid, CliError> {
@@ -262,8 +286,10 @@ impl TagGenerator {
             .map_err(CliError::from)
     }
 
-    fn should_skip_tagging(&self, tag_commit: Oid, current_commit: Oid) -> bool {
-        tag_commit == current_commit && !self.force_without_changes
+    fn should_skip_tagging(&self, tag_commit: Option<Oid>, current_commit: Oid) -> bool {
+        tag_commit.map_or(false, |commit| {
+            commit == current_commit && !self.force_without_change
+        })
     }
 
     fn calculate_new_tag(
@@ -338,6 +364,38 @@ impl TagGenerator {
         debug!("New version after bump: {}", version);
     }
 
+    fn update_versions(&self, new_version: &str) -> Result<Vec<String>, CliError> {
+        let repo = self.open_repository()?;
+        let repo_path = repo.workdir().ok_or_else(|| {
+            let err = git2::Error::new(
+                git2::ErrorCode::NotFound,
+                git2::ErrorClass::Repository,
+                "Repository has no working directory",
+            );
+            CliError::GitError(err)
+        })?;
+
+        // Change to the repository directory
+        let old_dir = std::env::current_dir().map_err(CliError::IoError)?;
+        std::env::set_current_dir(repo_path).map_err(CliError::IoError)?;
+
+        let mut version_manager = VersionManager::new();
+        version_manager.register_common_files()?;
+
+        // Update all version files
+        let updated_files = version_manager.update_all_versions(new_version)?;
+
+        // Change back to the original directory
+        std::env::set_current_dir(old_dir).map_err(CliError::IoError)?;
+
+        // Convert PathBuf to String
+        let updated_files: Vec<String> = updated_files
+            .into_iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
+        Ok(updated_files)
+    }
+
     fn calculate_pre_release_tag(&self, new_version: &Version, pre_tag: &str) -> String {
         debug!(
             "Calculating pre-release tag. New version: {}, Previous pre-tag: {}",
@@ -369,7 +427,9 @@ impl TagGenerator {
 
         let mut revwalk = repo.revwalk()?;
         revwalk.push(head_commit)?;
-        revwalk.hide(tag_commit)?;
+        if let Some(commit) = tag_commit {
+            revwalk.hide(commit)?; // Only hide if we have a commit
+        }
 
         let log = revwalk
             .filter_map(|oid| oid.ok())
@@ -380,6 +440,43 @@ impl TagGenerator {
 
         debug!("Commit log length: {} characters", log.len());
         Ok(log)
+    }
+
+    fn commit_version_changes(
+        &self,
+        repo: &Repository,
+        new_version: &str,
+        updated_files: &[String],
+    ) -> Result<(), CliError> {
+        if updated_files.is_empty() {
+            return Ok(());
+        }
+
+        let signature = repo.signature()?;
+        let tree_id = {
+            let mut index = repo.index()?;
+            for file in updated_files {
+                index.add_path(std::path::Path::new(file))?;
+            }
+            index.write()?;
+            index.write_tree()?
+        };
+
+        let tree = repo.find_tree(tree_id)?;
+        let parent_commit = repo.head()?.peel_to_commit()?;
+        let version_without_v = new_version.trim_start_matches('v');
+        let message = format!("chore: bump version to {}", version_without_v);
+
+        repo.commit(
+            Some("HEAD"),
+            &signature,
+            &signature,
+            &message,
+            &tree,
+            &[&parent_commit],
+        )?;
+
+        Ok(())
     }
 
     fn create_and_push_tag(&self, repo: &Repository, new_tag: &str) -> Result<(), CliError> {
