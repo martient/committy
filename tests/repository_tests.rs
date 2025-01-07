@@ -66,3 +66,38 @@ fn test_repository_not_found() {
         }
     }
 }
+
+#[test]
+fn test_staged_deleted_file() -> Result<(), CliError> {
+    let (temp_dir, repo) = setup_test_repo();
+    
+    // Create and commit a test file
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "test content").unwrap();
+    
+    // Stage and commit the file
+    let mut index = repo.index().unwrap();
+    index.add_path(std::path::Path::new("test.txt")).unwrap();
+    index.write().unwrap();
+    let tree_id = index.write_tree().unwrap();
+    let signature = git2::Signature::now("Test User", "test@example.com").unwrap();
+    let tree = repo.find_tree(tree_id).unwrap();
+    repo.commit(
+        Some("HEAD"),
+        &signature,
+        &signature,
+        "Initial commit",
+        &tree,
+        &[],
+    ).unwrap();
+    
+    // Delete and stage the file
+    fs::remove_file(&test_file).unwrap();
+    let mut index = repo.index().unwrap();
+    index.remove_path(std::path::Path::new("test.txt")).unwrap();
+    index.write().unwrap();
+    
+    // Verify that has_staged_changes detects the deleted file
+    assert!(has_staged_changes()?);
+    Ok(())
+}

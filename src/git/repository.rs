@@ -13,7 +13,9 @@ pub fn has_staged_changes() -> Result<bool, CliError> {
     let statuses = repo.statuses(None)?;
     Ok(statuses
         .iter()
-        .any(|s| s.status().is_index_new() || s.status().is_index_modified()))
+        .any(|s| s.status().is_index_new() 
+            || s.status().is_index_modified()
+            || s.status().is_index_deleted()))
 }
 
 fn get_config_value(config: &Config, key: &str) -> Option<String> {
