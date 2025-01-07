@@ -13,13 +13,26 @@ const ASSET_SUFFIX: &str = "macos-amd64";
 
 pub struct Updater {
     current_version: Version,
+    include_prerelease: bool,
 }
 
 impl Updater {
     pub fn new(current_version: &str) -> Result<Self> {
         Ok(Self {
             current_version: Version::parse(current_version)?,
+            include_prerelease: false,
         })
+    }
+
+    pub fn with_prerelease(mut self, include_prerelease: bool) -> Self {
+        self.include_prerelease = include_prerelease;
+        self
+    }
+
+    pub fn is_prerelease(version: &str) -> bool {
+        // Check if version contains pre-release indicators
+        version.contains('-') || version.contains("alpha") || 
+        version.contains("beta") || version.contains("rc")
     }
 
     pub async fn check_update(&self) -> Result<Option<Release>> {
@@ -29,11 +42,17 @@ impl Updater {
             .build()?
             .fetch()?;
 
-        if let Some(latest_release) = releases.first() {
+        let available_releases: Vec<&Release> = releases
+            .iter()
+            .filter(|release| self.include_prerelease || !Self::is_prerelease(&release.version))
+            .collect();
+
+        if let Some(latest_release) = available_releases.first() {
             let latest_version = Version::parse(&latest_release.version)?;
             if latest_version > self.current_version {
-                info!("New version {} available", latest_version);
-                return Ok(Some(latest_release.clone()));
+                info!("New version {} available{}", latest_version, 
+                    if Self::is_prerelease(&latest_release.version) { " (pre-release)" } else { "" });
+                return Ok(Some((*latest_release).clone()));
             }
         }
 
@@ -41,13 +60,13 @@ impl Updater {
         Ok(None)
     }
 
-    pub fn update_to_latest(&self) -> Result<()> {
-        info!("Starting update process...");
+    pub fn update_to_version(&self, version_tag: &str) -> Result<()> {
+        info!("Starting update process to version {}...", version_tag);
         let status = self_update::backends::github::Update::configure()
             .repo_owner(GITHUB_REPO_OWNER)
             .repo_name(GITHUB_REPO_NAME)
             .bin_name("committy")
-            .target_version_tag("latest")
+            .target_version_tag(version_tag)
             .target(&format!("committy-{}.tar.gz", ASSET_SUFFIX))
             .show_download_progress(true)
             .current_version(&self.current_version.to_string())
@@ -64,5 +83,9 @@ impl Updater {
         }
 
         Ok(())
+    }
+
+    pub fn update_to_latest(&self) -> Result<()> {
+        self.update_to_version("latest")
     }
 }
