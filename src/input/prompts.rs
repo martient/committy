@@ -6,13 +6,11 @@ use inquire::{Confirm, Select, Text};
 use log::info;
 
 pub fn select_commit_type() -> Result<String, CliError> {
-    logger::info("Selecting commit type...");
     let commit_type = Select::new("Select the type of commit:", COMMIT_TYPES.to_vec())
         .with_help_message("Use arrow keys to navigate, Enter to select")
         .prompt()
         .map_err(|e| CliError::InputError(e.to_string()))?;
 
-    logger::success(&format!("Selected commit type: {}", commit_type));
     Ok(commit_type.to_string())
 }
 

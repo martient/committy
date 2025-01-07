@@ -42,6 +42,9 @@ struct Opt {
         help = "Include pre-release versions when checking or updating"
     )]
     pre_release: bool,
+
+    #[structopt(long = "non-interactive", help = "Run in non-interactive mode")]
+    non_interactive: bool,
 }
 
 #[tokio::main]
@@ -66,13 +69,13 @@ async fn main() {
 }
 
 async fn run() -> Result<()> {
-    logger::info("Starting Committy...");
-
     let opt = Opt::from_args();
 
     if opt.check_update || opt.update {
         let mut updater = Updater::new(env!("CARGO_PKG_VERSION"))?;
-        updater.with_prerelease(opt.pre_release);
+        updater
+            .with_prerelease(opt.pre_release)
+            .with_non_interactive(opt.non_interactive);
 
         if opt.check_update {
             logger::info("Checking for updates...");
@@ -108,21 +111,32 @@ async fn run() -> Result<()> {
         }
     }
 
+    // Check for major/minor updates when running any command
+    if !opt.non_interactive && !opt.check_update && !opt.update {
+        let mut updater = Updater::new(env!("CARGO_PKG_VERSION"))?;
+        if let Some(release) = updater.check_and_prompt_update().await? {
+            match updater.update_to_version(&format!("v{}", release.version)) {
+                Ok(_) => logger::success("Update completed successfully!"),
+                Err(e) => logger::error(&format!("Update failed: {}", e)),
+            }
+        }
+    }
+
     // Check for staged changes before starting the interactive CLI
     if opt.cmd.is_none() {
         if let Err(e) = git::has_staged_changes() {
-            return Err(anyhow!(e));
+            return Err(e.into());
         }
         if !git::has_staged_changes().unwrap_or(false) {
-            return Err(anyhow!(CliError::NoStagedChanges));
+            return Err(CliError::NoStagedChanges.into());
         }
     }
 
     let result = match opt.cmd {
-        Some(cmd) => cmd.execute(),
+        Some(cmd) => cmd.execute(opt.non_interactive),
         None => {
             let cmd = CommitCommand::default();
-            cmd.execute()
+            cmd.execute(opt.non_interactive)
         }
     };
 
@@ -131,6 +145,6 @@ async fn run() -> Result<()> {
             logger::success("Operation completed successfully!");
             Ok(())
         }
-        Err(e) => Err(anyhow!(e)),
+        Err(e) => Err(e.into()),
     }
 }

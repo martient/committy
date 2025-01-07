@@ -25,7 +25,7 @@ pub struct TagCommand {
 }
 
 impl Command for TagCommand {
-    fn execute(&self) -> Result<(), CliError> {
+    fn execute(&self, non_interactive: bool) -> Result<(), CliError> {
         if git::has_staged_changes()? {
             return Err(CliError::StagedChanges);
         }
@@ -33,6 +33,12 @@ impl Command for TagCommand {
         if let Some(name) = &self.name {
             info!("Tag {} created successfully!", name);
         } else {
+            if non_interactive {
+                return Err(CliError::InputError(
+                    "Tag name is required in non-interactive mode".to_string(),
+                ));
+            }
+
             let validate = if !self.validate {
                 input::ask_want_create_new_tag()?
             } else {

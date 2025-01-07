@@ -84,8 +84,8 @@ fn test_commit_message_formatting() {
     let mut cmd = Command::cargo_bin("committy").unwrap();
     cmd.current_dir(&temp_dir)
         .env("RUST_LOG", "info")
-        .arg("commit")
         .arg("--non-interactive")
+        .arg("commit")
         .arg("--type")
         .arg("feat")
         .arg("--scope")
@@ -121,8 +121,8 @@ fn test_unstaged_changes() {
     let mut cmd = Command::cargo_bin("committy").unwrap();
     cmd.current_dir(&temp_dir)
         .env("RUST_LOG", "off")
-        .arg("commit")
         .arg("--non-interactive")
+        .arg("commit")
         .arg("--type")
         .arg("feat")
         .arg("--message")
@@ -155,8 +155,8 @@ fn test_commit_without_git_config() {
         .env("GIT_AUTHOR_NAME", "")
         .env("GIT_AUTHOR_EMAIL", "")
         .env("HOME", "/dev/null") // Prevent git from finding global config
-        .arg("commit")
         .arg("--non-interactive")
+        .arg("commit")
         .arg("--type")
         .arg("feat")
         .arg("--message")
@@ -183,8 +183,8 @@ fn test_commit_with_amend() {
     let mut cmd = Command::cargo_bin("committy").unwrap();
     cmd.current_dir(&temp_dir)
         .env("RUST_LOG", "info")
-        .arg("commit")
         .arg("--non-interactive")
+        .arg("commit")
         .arg("--type")
         .arg("feat")
         .arg("--message")
@@ -204,8 +204,8 @@ fn test_commit_with_amend() {
     let mut cmd = Command::cargo_bin("committy").unwrap();
     cmd.current_dir(&temp_dir)
         .env("RUST_LOG", "info")
-        .arg("commit")
         .arg("--non-interactive")
+        .arg("commit")
         .arg("--type")
         .arg("feat")
         .arg("--message")

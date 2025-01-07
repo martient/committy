@@ -11,7 +11,7 @@ pub struct LintCommand {
 }
 
 impl Command for LintCommand {
-    fn execute(&self) -> Result<(), CliError> {
+    fn execute(&self, _non_interactive: bool) -> Result<(), CliError> {
         let linter =
             CommitLinter::new(&self.repo_path).map_err(|e| CliError::Generic(e.to_string()))?;
 

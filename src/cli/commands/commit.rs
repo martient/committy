@@ -23,15 +23,12 @@ pub struct CommitCommand {
     #[structopt(long, help = "Mark this as a breaking change")]
     breaking_change: bool,
 
-    #[structopt(long, help = "Run in non-interactive mode")]
-    non_interactive: bool,
-
     #[structopt(long, help = "Amend the previous commit")]
     amend: bool,
 }
 
 impl Command for CommitCommand {
-    fn execute(&self) -> Result<(), CliError> {
+    fn execute(&self, non_interactive: bool) -> Result<(), CliError> {
         // Validate git configuration first
         git::validate_git_config()?;
 
@@ -39,8 +36,8 @@ impl Command for CommitCommand {
             return Err(CliError::NoStagedChanges);
         }
 
-        // In non-interactive mode, all required fields must be provided
-        if self.non_interactive {
+        // In non-interactive mode (from the command root), all required fields must be provided
+        if non_interactive {
             debug!("Running in non-interactive mode");
             if self.type_.is_none() || self.message.is_none() {
                 return Err(CliError::InputError(
@@ -78,7 +75,7 @@ impl Command for CommitCommand {
         let breaking_change = if self.breaking_change {
             debug!("Breaking change flag is set");
             true
-        } else if !self.non_interactive {
+        } else if !non_interactive {
             input::confirm_breaking_change()?
         } else {
             false
@@ -86,7 +83,7 @@ impl Command for CommitCommand {
 
         // Handle scope with auto-correction
         let scope = if let Some(scope) = &self.scope {
-            if !self.non_interactive {
+            if !non_interactive {
                 // In interactive mode, validate and potentially correct the scope
                 input::validate_scope_input(scope)?
             } else {
@@ -97,7 +94,7 @@ impl Command for CommitCommand {
                 }
                 corrected
             }
-        } else if !self.non_interactive {
+        } else if !non_interactive {
             input::input_scope()?
         } else {
             String::new()
@@ -106,7 +103,7 @@ impl Command for CommitCommand {
         // Handle messages
         let short_message = match &self.message {
             Some(msg) if !msg.is_empty() => msg.clone(),
-            _ if !self.non_interactive => input::input_short_message()?,
+            _ if !non_interactive => input::input_short_message()?,
             _ => {
                 return Err(CliError::InputError(
                     "Short message is required".to_string(),
@@ -116,7 +113,7 @@ impl Command for CommitCommand {
 
         let long_message = match &self.long_message {
             Some(msg) => msg.clone(),
-            None if !self.non_interactive => input::input_long_message()?,
+            None if !non_interactive => input::input_long_message()?,
             None => String::new(),
         };
 

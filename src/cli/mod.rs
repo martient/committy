@@ -5,7 +5,7 @@ use crate::error::CliError;
 use structopt::StructOpt;
 
 pub trait Command {
-    fn execute(&self) -> Result<(), CliError>;
+    fn execute(&self, non_interactive: bool) -> Result<(), CliError>;
 }
 
 #[derive(StructOpt)]
@@ -21,12 +21,12 @@ pub enum CliCommand {
 }
 
 impl CliCommand {
-    pub fn execute(&self) -> Result<(), CliError> {
+    pub fn execute(&self, non_interactive: bool) -> Result<(), CliError> {
         match self {
-            CliCommand::Commit(cmd) => cmd.execute(),
-            CliCommand::Amend(cmd) => cmd.execute(),
-            CliCommand::Tag(cmd) => cmd.execute(),
-            CliCommand::Lint(cmd) => cmd.execute(),
+            CliCommand::Commit(cmd) => cmd.execute(non_interactive),
+            CliCommand::Amend(cmd) => cmd.execute(non_interactive),
+            CliCommand::Tag(cmd) => cmd.execute(non_interactive),
+            CliCommand::Lint(cmd) => cmd.execute(non_interactive),
         }
     }
 }
