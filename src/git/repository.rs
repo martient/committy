@@ -1,8 +1,15 @@
 use crate::error::CliError;
 use git2::{Config, Repository};
+use std::env;
+
+fn discover_repository() -> Result<Repository, CliError> {
+    let current_dir = env::current_dir()?;
+    Repository::discover(&current_dir)
+        .map_err(|e| CliError::GitError(e))
+}
 
 pub fn has_staged_changes() -> Result<bool, CliError> {
-    let repo = Repository::open(".")?;
+    let repo = discover_repository()?;
     let statuses = repo.statuses(None)?;
     Ok(statuses
         .iter()
@@ -17,7 +24,7 @@ fn get_config_value(config: &Config, key: &str) -> Option<String> {
 }
 
 pub fn validate_git_config() -> Result<(), CliError> {
-    let repo = Repository::open(".")?;
+    let repo = discover_repository()?;
     let config = repo.config()?;
 
     // Try to get user.name from local or global config
