@@ -9,12 +9,35 @@ permissions:
 on:
   push:
     tags:
-      # - "v*"
       - "v[0-9]+.[0-9]+.[0-9]+"
 
-
 jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Generate Changelog
+        id: changelog
+        uses: mikepenz/release-changelog-builder-action@v4
+        with:
+          configuration: ".github/changelog-config.json"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          body: ${{ steps.changelog.outputs.changelog }}
+          name: Release ${{ github.ref_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   release:
+    needs: create-release
     name: Release for ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
 
@@ -30,7 +53,7 @@ jobs:
             target: aarch64-unknown-linux-gnu
             suffix: ""
             asset_suffix: linux-arm64
-          - os: windows-latest # REMOVE UNTIL WE FIND A SOLUTION REGARDING OPEN SSL
+          - os: windows-latest
             target: x86_64-pc-windows-msvc
             suffix: .exe
             asset_suffix: windows-amd64.exe
@@ -46,37 +69,34 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Get binary name
+      - name: Get binary name and version
         shell: bash
         run: |
           BINARY_NAME=$(grep -m1 'name\s*=' Cargo.toml | cut -d'"' -f2 | cut -d"'" -f2)
+          VERSION=$(grep -m1 'version\s*=' Cargo.toml | cut -d'"' -f2 | cut -d"'" -f2)
           echo "BINARY_NAME=$BINARY_NAME" >> $GITHUB_ENV
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "BUILD_DATE=$(date -u +'%Y-%m-%d')" >> $GITHUB_ENV
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
 
-      # Install OpenSSL on Ubuntu
       - name: Install OpenSSL (Ubuntu)
-        shell: bash
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y pkg-config libssl-dev
 
-      # Install OpenSSL on macOS
       - name: Install OpenSSL (macOS)
-        shell: bash
         if: runner.os == 'macOS'
         run: |
           brew install openssl@3
           echo "OPENSSL_DIR=$(brew --prefix openssl@3)" >> $GITHUB_ENV
           echo "PKG_CONFIG_PATH=$(brew --prefix openssl@3)/lib/pkgconfig" >> $GITHUB_ENV
 
-      # Install OpenSSL on Windows
       - name: Install OpenSSL (Windows)
-        shell: bash
         if: runner.os == 'Windows'
         run: |
           choco install strawberryperl make
@@ -91,43 +111,71 @@ jobs:
       - name: Build
         shell: bash
         run: |
+          # Add build metadata
+          BUILD_METADATA="target=${{ matrix.target }},date=${{ env.BUILD_DATE }},version=${{ env.VERSION }}"
+          
           if [[ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]]; then
             cross build --release --target ${{ matrix.target }}
           else
             cargo build --release --target ${{ matrix.target }}
           fi
+          
+          # Verify binary exists and is executable
+          BINARY_PATH="target/${{ matrix.target }}/release/${{ env.BINARY_NAME }}${{ matrix.suffix }}"
+          if [ ! -f "$BINARY_PATH" ]; then
+            echo "Error: Binary not found at $BINARY_PATH"
+            exit 1
+          fi
+          
+          if [[ "$RUNNER_OS" != "Windows" ]]; then
+            if [ ! -x "$BINARY_PATH" ]; then
+              echo "Error: Binary is not executable"
+              exit 1
+            fi
+          fi
         env:
           OPENSSL_STATIC: "1"
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+          RUST_BACKTRACE: 1
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
 
       - name: Prepare asset
         shell: bash
         run: |
-          # Convert Windows paths to bash-compatible format for Windows runners
+          # Create dist directory
+          mkdir -p dist
+          
+          # Copy binary and create archive
           if [[ "$RUNNER_OS" == "Windows" ]]; then
-            cd "$GITHUB_WORKSPACE/target/${{ matrix.target }}/release"
+            cp "target/${{ matrix.target }}/release/${{ env.BINARY_NAME }}${{ matrix.suffix }}" dist/
           else
-            cd target/${{ matrix.target }}/release
+            cp "target/${{ matrix.target }}/release/${{ env.BINARY_NAME }}${{ matrix.suffix }}" dist/
           fi
-          tar -czf "../../../${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz" "${{ env.BINARY_NAME }}${{ matrix.suffix }}"
-  
+          
+          # Add metadata file
+          cat > dist/metadata.txt << EOF
+          Version: ${{ env.VERSION }}
+          Target: ${{ matrix.target }}
+          Build Date: ${{ env.BUILD_DATE }}
+          EOF
+          
+          # Create archive
+          cd dist
+          tar -czf "../${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz" ./*
+          cd ..
+
       - name: Generate checksums
         shell: bash
         run: |
-          # Ensure we're in the correct directory
-          cd "$GITHUB_WORKSPACE"
           if [[ "$RUNNER_OS" == "macOS" ]]; then
             shasum -a 256 "${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz" > "${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz.sha256"
           elif [[ "$RUNNER_OS" == "Windows" ]]; then
-            # certutil -hashfile "${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz" SHA256 | findstr /v "hash" > "${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz.sha256"
-            # certutil -hashfile "${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz" SHA256 | findstr /v /c:"SHA256 hash of" /c:"CertUtil" > "${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz.sha256"
             powershell -Command "(Get-FileHash -Algorithm SHA256 '${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz').Hash.ToLower() + '  ${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz'" > "${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz.sha256"
-            # certutil -hashfile "committy-windows-amd64.exe.tar.gz" SHA256 | findstr /v /c:"SHA256 hash of" /c:"CertUtil" > "committy-windows-amd64.exe.tar.gz.sha256"
           else
             sha256sum "${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz" > "${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz.sha256"
           fi
 
-      - name: Release
+      - name: Upload Release Asset
         uses: softprops/action-gh-release@v2
         with:
           files: |

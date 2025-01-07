@@ -1,3 +1,5 @@
+include!(concat!(env!("OUT_DIR"), "/sentry_dsn.rs"));
+
 mod cli;
 mod config;
 mod error;
@@ -5,10 +7,12 @@ mod git;
 mod input;
 mod linter;
 mod release;
+mod update;
 mod version;
 
-use config::SENTRY_DSN;
+use sentry::ClientInitGuard;
 use env_logger::{Builder, Env};
+use std::error::Error;
 use structopt::StructOpt;
 
 use crate::cli::commands::commit::CommitCommand;
@@ -23,20 +27,49 @@ use crate::cli::CliCommand;
 struct Opt {
     #[structopt(subcommand)]
     cmd: Option<CliCommand>,
+
+    #[structopt(long = "check-update", help = "Check for available updates")]
+    check_update: bool,
+
+    #[structopt(long = "update", help = "Update to the latest version")]
+    update: bool,
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
     Builder::from_env(Env::default().default_filter_or("info")).init();
+    let mut _guard: ClientInitGuard;
 
-    let _guard = sentry::init((
-        SENTRY_DSN,
-        sentry::ClientOptions {
-            release: sentry::release_name!(),
-            ..Default::default()
-        },
-    ));
+    if SENTRY_DSN != "undefined" {
+        _guard = sentry::init((
+            SENTRY_DSN,
+            sentry::ClientOptions {
+                release: sentry::release_name!(),
+                ..Default::default()
+            },
+        ));
+    }
 
     let opt = Opt::from_args();
+
+    // Handle update commands
+    if opt.check_update || opt.update {
+        let updater = update::Updater::new(env!("CARGO_PKG_VERSION"))?;
+        if opt.check_update {
+            if let Some(release) = updater.check_update().await? {
+                println!("New version {} available!", release.version);
+                println!("Run 'committy --update' to update to the latest version");
+            } else {
+                println!("You are running the latest version!");
+            }
+            return Ok(());
+        }
+
+        if opt.update {
+            updater.update_to_latest()?;
+            return Ok(());
+        }
+    }
 
     // Check for staged changes before starting the interactive CLI
     if opt.cmd.is_none() {
