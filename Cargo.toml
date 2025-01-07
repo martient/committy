@@ -25,6 +25,8 @@ env_logger = "0.11.6"
 strsim = "0.11.1"
 self_update = { version = "0.42.0", features = ["archive-tar", "compression-flate2", "archive-zip"] }
 tokio = { version = "1.42.0", features = ["full"] }
+colored = "2.0.4"
+indicatif = "0.17.7"
 
 [dev-dependencies]
 assert_cmd = "2.0.12"
