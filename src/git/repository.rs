@@ -3,8 +3,21 @@ use git2::{Config, Repository, StatusOptions, StatusShow};
 use std::env;
 
 fn discover_repository() -> Result<Repository, CliError> {
-    let current_dir = env::current_dir()?;
-    Repository::discover(&current_dir).map_err(CliError::GitError)
+    let mut current_dir = env::current_dir()?;
+    
+    loop {
+        if current_dir.join(".git").exists() {
+            return Repository::open(&current_dir).map_err(CliError::GitError);
+        }
+        
+        if !current_dir.pop() {
+            break;
+        }
+    }
+    
+    Err(CliError::GitError(git2::Error::from_str(
+        "Could not find Git repository in current directory or any parent directories",
+    )))
 }
 
 pub fn has_staged_changes() -> Result<bool, CliError> {

@@ -183,3 +183,26 @@ fn test_unstaged_changes_only() -> Result<(), CliError> {
 
     Ok(())
 }
+
+#[test]
+fn test_repository_discovery_without_staged_changes() -> Result<(), CliError> {
+    let (temp_dir, _repo) = setup_test_repo();
+
+    // Create a deep subdirectory structure
+    let subdir_path = temp_dir.path().join("src").join("deep").join("path");
+    fs::create_dir_all(&subdir_path).unwrap();
+
+    // Change to the deep subdirectory
+    let original_dir = env::current_dir().unwrap();
+    env::set_current_dir(&subdir_path).unwrap();
+
+    // Verify we can detect the repository even without staged changes
+    let result = has_staged_changes();
+
+    // Change back to the original directory
+    env::set_current_dir(original_dir).unwrap();
+
+    assert!(result.is_ok());
+    assert!(!result.unwrap(), "Expected no staged changes");
+    Ok(())
+}
