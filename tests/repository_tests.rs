@@ -14,6 +14,26 @@ fn setup_test_repo() -> (TempDir, Repository) {
     config.set_str("user.name", "Test User").unwrap();
     config.set_str("user.email", "test@example.com").unwrap();
 
+    // Create an initial empty commit to initialize the repository
+    {
+        let signature = repo.signature().unwrap();
+        
+        // Create an empty tree for the initial commit
+        let mut index = repo.index().unwrap();
+        let tree_id = index.write_tree().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+        
+        // Create the initial commit
+        repo.commit(
+            Some("refs/heads/master"),
+            &signature,
+            &signature,
+            "Initial commit",
+            &tree,
+            &[],
+        ).unwrap();
+    }
+
     (temp_dir, repo)
 }
 
@@ -77,7 +97,6 @@ fn test_repository_not_found() {
 fn test_staged_deleted_file() -> Result<(), CliError> {
     let (temp_dir, repo) = setup_test_repo();
 
-    // Create and commit a test file
     let test_file = temp_dir.path().join("test.txt");
     fs::write(&test_file, "test content").unwrap();
 
@@ -88,14 +107,18 @@ fn test_staged_deleted_file() -> Result<(), CliError> {
     let tree_id = index.write_tree().unwrap();
     let signature = git2::Signature::now("Test User", "test@example.com").unwrap();
     let tree = repo.find_tree(tree_id).unwrap();
+    
+    // Get the parent commit
+    let parent_commit = repo.head().unwrap().peel_to_commit().unwrap();
+    
     let _commit = repo
         .commit(
             Some("HEAD"),
             &signature,
             &signature,
-            "Initial commit",
+            "Add test file",
             &tree,
-            &[],
+            &[&parent_commit],
         )
         .unwrap();
 
@@ -132,13 +155,17 @@ fn test_no_staged_changes() -> Result<(), CliError> {
     let tree_id = index.write_tree().unwrap();
     let signature = git2::Signature::now("Test User", "test@example.com").unwrap();
     let tree = repo.find_tree(tree_id).unwrap();
+    
+    // Get the parent commit
+    let parent_commit = repo.head().unwrap().peel_to_commit().unwrap();
+    
     repo.commit(
         Some("HEAD"),
         &signature,
         &signature,
-        "Initial commit",
+        "Add test file",
         &tree,
-        &[],
+        &[&parent_commit],
     )
     .unwrap();
 
@@ -204,5 +231,45 @@ fn test_repository_discovery_without_staged_changes() -> Result<(), CliError> {
 
     assert!(result.is_ok());
     assert!(!result.unwrap(), "Expected no staged changes");
+    Ok(())
+}
+
+#[test]
+fn test_commit_from_subdirectory() -> Result<(), CliError> {
+    let (temp_dir, repo) = setup_test_repo();
+
+    // Create a deep subdirectory structure
+    let subdir_path = temp_dir.path().join("src").join("deep").join("path");
+    fs::create_dir_all(&subdir_path).unwrap();
+
+    // Create and stage a test file
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "test content").unwrap();
+
+    // Stage the file
+    let mut index = repo.index().unwrap();
+    index.add_path(std::path::Path::new("test.txt")).unwrap();
+    index.write().unwrap();
+
+    // Change to the deep subdirectory
+    let original_dir = env::current_dir().unwrap();
+    env::set_current_dir(&subdir_path).unwrap();
+
+    // Verify staged changes are detected
+    let has_changes = has_staged_changes()?;
+    assert!(has_changes, "Expected to detect staged changes from subdirectory");
+
+    // Try to commit the changes
+    let commit_message = "test: commit from subdirectory";
+    committy::git::commit_changes(commit_message, false)?;
+
+    // Verify the commit was created with the correct message
+    let head_commit = repo.head()?.peel_to_commit()?;
+    let head_message = head_commit.message().unwrap_or("");
+    assert_eq!(head_message, commit_message, "Expected commit message '{}' but got '{}'", commit_message, head_message);
+
+    // Change back to the original directory
+    env::set_current_dir(original_dir).unwrap();
+
     Ok(())
 }

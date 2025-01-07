@@ -1,23 +1,21 @@
 use crate::error::CliError;
 use git2::{Config, Repository, StatusOptions, StatusShow};
 use std::env;
+use log;
 
-fn discover_repository() -> Result<Repository, CliError> {
-    let mut current_dir = env::current_dir()?;
+pub fn discover_repository() -> Result<Repository, CliError> {
+    let current_dir = env::current_dir()?;
+    log::debug!("Starting repository discovery from: {:?}", current_dir);
     
-    loop {
-        if current_dir.join(".git").exists() {
-            return Repository::open(&current_dir).map_err(CliError::GitError);
-        }
-        
-        if !current_dir.pop() {
-            break;
+    match Repository::discover(&current_dir) {
+        Ok(repo) => Ok(repo),
+        Err(e) => {
+            log::error!("Failed to discover repository from {:?}: {}", current_dir, e);
+            Err(CliError::GitError(git2::Error::from_str(
+                "Could not find Git repository in current directory or any parent directories",
+            )))
         }
     }
-    
-    Err(CliError::GitError(git2::Error::from_str(
-        "Could not find Git repository in current directory or any parent directories",
-    )))
 }
 
 pub fn has_staged_changes() -> Result<bool, CliError> {

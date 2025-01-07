@@ -1,8 +1,9 @@
 use crate::error::CliError;
 use git2::Repository;
+use super::repository::discover_repository;
 
 pub fn commit_changes(message: &str, amend: bool) -> Result<(), CliError> {
-    let repo = Repository::open(".")?;
+    let repo = discover_repository()?;
     let signature = repo.signature()?;
     let mut index = repo.index()?;
     let oid = index.write_tree()?;
@@ -20,19 +21,24 @@ pub fn commit_changes(message: &str, amend: bool) -> Result<(), CliError> {
             Some(&tree),
         )?;
     } else {
-        let parent_commit = match repo.head() {
-            Ok(head) => Some(head.peel_to_commit()?),
-            Err(_) => None,
+        let parents = match repo.head() {
+            Ok(head) => {
+                let commit = head.peel_to_commit()?;
+                vec![commit]
+            }
+            Err(_) => vec![],
         };
 
-        let parents = parent_commit.as_ref().map(|c| vec![c]).unwrap_or_default();
+        let parents_refs: Vec<&git2::Commit> = parents.iter().collect();
+        
+        // Create the commit
         repo.commit(
             Some("HEAD"),
             &signature,
             &signature,
             message,
             &tree,
-            &parents,
+            &parents_refs,
         )?;
     }
 
