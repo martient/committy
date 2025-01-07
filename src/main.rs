@@ -38,6 +38,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let opt = Opt::from_args();
 
+    // Check for staged changes before starting the interactive CLI
+    if opt.cmd.is_none() {
+        if let Err(e) = git::has_staged_changes() {
+            eprintln!("Error: {}", e);
+            std::process::exit(1);
+        }
+        if !git::has_staged_changes().unwrap_or(false) {
+            eprintln!("Error: No staged changes found\nFor help, run 'committy --help'");
+            std::process::exit(1);
+        }
+    }
+
     let result = match opt.cmd {
         Some(cmd) => cmd.execute(),
         None => CliCommand::Commit(CommitCommand::default()).execute(),

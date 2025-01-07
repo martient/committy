@@ -11,50 +11,46 @@ pub fn has_staged_changes() -> Result<bool, CliError> {
     let repo = discover_repository()?;
     let mut opts = StatusOptions::new();
     opts.include_ignored(false)
-        .include_untracked(true)
+        .include_untracked(false)
         .include_unmodified(false)
         .exclude_submodules(true)
-        .show(StatusShow::Index);
+        .show(StatusShow::Index);  // Only show index changes
 
     let statuses = repo.statuses(Some(&mut opts))?;
+
+    // Check for any index changes (including deletions)
     for entry in statuses.iter() {
         let status = entry.status();
         if status.is_index_new()
             || status.is_index_modified()
             || status.is_index_deleted()
             || status.is_index_renamed()
+            || status.is_index_typechange()
         {
             return Ok(true);
         }
     }
 
-    // If no status changes found and HEAD exists, check the index against HEAD
+    // If HEAD exists, check for staged deletions
     if let Ok(head) = repo.head() {
-        if let Ok(head) = head.peel_to_commit() {
-            let head_tree = head.tree()?;
+        if let Ok(head_commit) = head.peel_to_commit() {
+            let head_tree = head_commit.tree()?;
             let index = repo.index()?;
 
-            // Compare index with HEAD tree
-            for entry in index.iter() {
-                let path = std::str::from_utf8(&entry.path).unwrap_or("");
-                if let Ok(tree_entry) = head_tree.get_path(std::path::Path::new(path)) {
-                    // Entry exists in HEAD, check if it's different in the index
-                    if tree_entry.id() != entry.id {
-                        return Ok(true);
-                    }
-                } else {
-                    // Entry doesn't exist in HEAD, it's new
-                    return Ok(true);
-                }
-            }
-
-            // Check for deletions by comparing HEAD tree with index
+            // Compare HEAD tree with index
             for entry in head_tree.iter() {
-                let path = entry.name().unwrap_or("");
-                if index.get_path(std::path::Path::new(path), 0).is_none() {
-                    return Ok(true);
+                if let Some(name) = entry.name() {
+                    if index.get_path(std::path::Path::new(name), 0).is_none() {
+                        return Ok(true);  // File exists in HEAD but not in index = staged deletion
+                    }
                 }
             }
+        }
+    } else {
+        // No HEAD yet, check if there are any entries in the index
+        let index = repo.index()?;
+        if index.len() > 0 {
+            return Ok(true);  // New repository with staged files
         }
     }
 

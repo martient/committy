@@ -19,7 +19,7 @@ fn setup_test_repo() -> (TempDir, Repository) {
 
 #[test]
 fn test_repository_discovery_from_subdirectory() -> Result<(), CliError> {
-    let (temp_dir, _repo) = setup_test_repo();
+    let (temp_dir, repo) = setup_test_repo();
 
     // Create a subdirectory structure
     let subdir_path = temp_dir.path().join("src").join("deep").join("path");
@@ -28,6 +28,11 @@ fn test_repository_discovery_from_subdirectory() -> Result<(), CliError> {
     // Create and stage a test file
     let test_file = temp_dir.path().join("test.txt");
     fs::write(&test_file, "test content").unwrap();
+
+    // Stage the file
+    let mut index = repo.index().unwrap();
+    index.add_path(std::path::Path::new("test.txt")).unwrap();
+    index.write().unwrap();
 
     // Change to the deep subdirectory
     let original_dir = env::current_dir().unwrap();
@@ -40,6 +45,7 @@ fn test_repository_discovery_from_subdirectory() -> Result<(), CliError> {
     env::set_current_dir(original_dir).unwrap();
 
     assert!(result.is_ok());
+    assert!(result.unwrap(), "Expected staged changes to be detected");
     Ok(())
 }
 
@@ -82,7 +88,7 @@ fn test_staged_deleted_file() -> Result<(), CliError> {
     let tree_id = index.write_tree().unwrap();
     let signature = git2::Signature::now("Test User", "test@example.com").unwrap();
     let tree = repo.find_tree(tree_id).unwrap();
-    let commit = repo
+    let _commit = repo
         .commit(
             Some("HEAD"),
             &signature,
@@ -110,9 +116,73 @@ fn test_staged_deleted_file() -> Result<(), CliError> {
     index.write().unwrap();
 
     // Check status flags
-    let statuses = repo.statuses(None).unwrap();
+    let _statuses = repo.statuses(None).unwrap();
 
     // Verify that has_staged_changes detects the deleted file
     assert!(has_staged_changes()?);
+    Ok(())
+}
+
+#[test]
+fn test_no_staged_changes() -> Result<(), CliError> {
+    let (temp_dir, repo) = setup_test_repo();
+
+    // Create and commit a test file
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "test content").unwrap();
+
+    // Stage and commit the file
+    let mut index = repo.index().unwrap();
+    index.add_path(std::path::Path::new("test.txt")).unwrap();
+    index.write().unwrap();
+    let tree_id = index.write_tree().unwrap();
+    let signature = git2::Signature::now("Test User", "test@example.com").unwrap();
+    let tree = repo.find_tree(tree_id).unwrap();
+    repo.commit(
+        Some("HEAD"),
+        &signature,
+        &signature,
+        "Initial commit",
+        &tree,
+        &[],
+    )
+    .unwrap();
+
+    // Change to the repository directory to ensure we're in the right context
+    let original_dir = env::current_dir().unwrap();
+    env::set_current_dir(temp_dir.path()).unwrap();
+
+    // Verify no staged changes are detected
+    let result = has_staged_changes()?;
+    assert!(
+        !result,
+        "Expected no staged changes, but changes were detected"
+    );
+
+    // Change back to the original directory
+    env::set_current_dir(original_dir).unwrap();
+
+    Ok(())
+}
+
+#[test]
+fn test_unstaged_changes_only() -> Result<(), CliError> {
+    let (temp_dir, repo) = setup_test_repo();
+
+    // Create a test file
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "test content").unwrap();
+
+    // Change to the repository directory
+    let original_dir = env::current_dir().unwrap();
+    env::set_current_dir(temp_dir.path()).unwrap();
+
+    // Verify no staged changes are detected
+    let result = has_staged_changes()?;
+    assert!(!result, "Expected no staged changes with only unstaged files");
+
+    // Change back to the original directory
+    env::set_current_dir(original_dir).unwrap();
+
     Ok(())
 }
