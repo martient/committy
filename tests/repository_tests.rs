@@ -17,12 +17,12 @@ fn setup_test_repo() -> (TempDir, Repository) {
     // Create an initial empty commit to initialize the repository
     {
         let signature = repo.signature().unwrap();
-        
+
         // Create an empty tree for the initial commit
         let mut index = repo.index().unwrap();
         let tree_id = index.write_tree().unwrap();
         let tree = repo.find_tree(tree_id).unwrap();
-        
+
         // Create the initial commit
         repo.commit(
             Some("refs/heads/master"),
@@ -31,7 +31,8 @@ fn setup_test_repo() -> (TempDir, Repository) {
             "Initial commit",
             &tree,
             &[],
-        ).unwrap();
+        )
+        .unwrap();
     }
 
     (temp_dir, repo)
@@ -108,10 +109,10 @@ fn test_staged_deleted_file() -> Result<(), CliError> {
     let tree_id = index.write_tree().unwrap();
     let signature = git2::Signature::now("Test User", "test@example.com").unwrap();
     let tree = repo.find_tree(tree_id).unwrap();
-    
+
     // Get the parent commit
     let parent_commit = repo.head().unwrap().peel_to_commit().unwrap();
-    
+
     let _commit = repo
         .commit(
             Some("HEAD"),
@@ -156,10 +157,10 @@ fn test_no_staged_changes() -> Result<(), CliError> {
     let tree_id = index.write_tree().unwrap();
     let signature = git2::Signature::now("Test User", "test@example.com").unwrap();
     let tree = repo.find_tree(tree_id).unwrap();
-    
+
     // Get the parent commit
     let parent_commit = repo.head().unwrap().peel_to_commit().unwrap();
-    
+
     repo.commit(
         Some("HEAD"),
         &signature,
@@ -265,7 +266,10 @@ fn test_commit_from_subdirectory() -> Result<(), CliError> {
 
     // Verify staged changes are detected
     let has_changes = has_staged_changes()?;
-    assert!(has_changes, "Expected to detect staged changes from subdirectory");
+    assert!(
+        has_changes,
+        "Expected to detect staged changes from subdirectory"
+    );
 
     // Try to commit the changes
     let commit_message = "test: commit from subdirectory";
@@ -274,11 +278,19 @@ fn test_commit_from_subdirectory() -> Result<(), CliError> {
     // Verify the commit was created with the correct message
     let head_commit = repo.head()?.peel_to_commit()?;
     let head_message = head_commit.message().unwrap_or("");
-    assert_eq!(head_message, commit_message, "Expected commit message '{}' but got '{}'", commit_message, head_message);
+    assert_eq!(
+        head_message, commit_message,
+        "Expected commit message '{}' but got '{}'",
+        commit_message, head_message
+    );
 
     // Get the parent commit to verify the history
     let parent_commit = head_commit.parent(0)?;
-    assert_eq!(parent_commit.message().unwrap_or(""), "Initial commit", "Expected parent commit to be 'Initial commit'");
+    assert_eq!(
+        parent_commit.message().unwrap_or(""),
+        "Initial commit",
+        "Expected parent commit to be 'Initial commit'"
+    );
 
     // Change back to the original directory
     env::set_current_dir(original_dir).unwrap();

@@ -1,7 +1,5 @@
-use crate::error::CliError;
-use git2::Repository;
 use super::repository::discover_repository;
-use std::env;
+use crate::error::CliError;
 
 pub fn commit_changes(message: &str, amend: bool) -> Result<(), CliError> {
     let repo = discover_repository()?;
@@ -31,7 +29,7 @@ pub fn commit_changes(message: &str, amend: bool) -> Result<(), CliError> {
         };
 
         let parents_refs: Vec<&git2::Commit> = parents.iter().collect();
-        
+
         // Create the commit
         repo.commit(
             Some("HEAD"),

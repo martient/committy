@@ -26,4 +26,4 @@ jobs:
     - name: Lint with clippy
       run: cargo clippy -- -D warnings
     - name: Run tests
-      run: cargo test
+      run: cargo test -- --test-threads=1
