@@ -1,15 +1,18 @@
 use super::validation::{auto_correct_scope, validate_scope, validate_short_message};
 use crate::config::{COMMIT_TYPES, MAX_SHORT_DESCRIPTION_LENGTH};
 use crate::error::CliError;
-use inquire::validator::Validation;
+use crate::logger;
 use inquire::{Confirm, Select, Text};
 use log::info;
 
 pub fn select_commit_type() -> Result<String, CliError> {
+    logger::info("Selecting commit type...");
     let commit_type = Select::new("Select the type of commit:", COMMIT_TYPES.to_vec())
+        .with_help_message("Use arrow keys to navigate, Enter to select")
         .prompt()
         .map_err(|e| CliError::InputError(e.to_string()))?;
 
+    logger::success(&format!("Selected commit type: {}", commit_type));
     Ok(commit_type.to_string())
 }
 
@@ -45,6 +48,7 @@ pub fn validate_scope_input(scope: &str) -> Result<String, CliError> {
 
 pub fn input_scope() -> Result<String, CliError> {
     let scope = Text::new("Enter the scope of the commit (optional):")
+        .with_help_message("Press Enter to skip")
         .prompt()
         .map_err(|e| CliError::InputError(e.to_string()))?;
 
@@ -56,23 +60,39 @@ pub fn input_scope() -> Result<String, CliError> {
 }
 
 pub fn input_short_message() -> Result<String, CliError> {
-    Text::new(&format!(
-        "Enter a short description (max {} characters):",
-        MAX_SHORT_DESCRIPTION_LENGTH
-    ))
-    .with_validator(|s: &str| {
-        validate_short_message(s)
-            .map_err(|e| e.into())
-            .map(|_| Validation::Valid)
-    })
-    .prompt()
-    .map_err(|e| CliError::InputError(e.to_string()))
+    let validator = move |input: &str| {
+        let remaining = MAX_SHORT_DESCRIPTION_LENGTH - input.len();
+        match validate_short_message(input) {
+            Ok(_) => Ok(inquire::validator::Validation::Valid),
+            Err(msg) => Ok(inquire::validator::Validation::Invalid(
+                inquire::validator::ErrorMessage::Custom(format!(
+                    "{} ({} chars remaining)",
+                    msg, remaining
+                )),
+            )),
+        }
+    };
+
+    let msg = Text::new("Enter a short description:")
+        .with_help_message(&format!("Max {} characters", MAX_SHORT_DESCRIPTION_LENGTH))
+        .with_validator(validator)
+        .prompt()
+        .map_err(|e| CliError::InputError(e.to_string()))?;
+
+    logger::success("Short description validated");
+    Ok(msg)
 }
 
 pub fn input_long_message() -> Result<String, CliError> {
-    Text::new("Enter a detailed description (optional):")
+    let msg = Text::new("Enter a detailed description (optional):")
+        .with_help_message("Press Enter twice to finish")
         .prompt()
-        .map_err(|e| CliError::InputError(e.to_string()))
+        .map_err(|e| CliError::InputError(e.to_string()))?;
+
+    if !msg.is_empty() {
+        logger::info("Added detailed description");
+    }
+    Ok(msg)
 }
 
 pub fn ask_want_create_new_tag() -> Result<bool, CliError> {

@@ -129,7 +129,9 @@ fn test_unstaged_changes() {
         .arg("Test commit")
         .assert()
         .failure()
-        .stderr(predicate::str::contains("No staged changes found"));
+        .stderr(predicate::str::contains(
+            "No staged changes found\nFor help, run 'committy --help'",
+        ));
 }
 
 #[test]

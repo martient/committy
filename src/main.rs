@@ -6,17 +6,20 @@ mod error;
 mod git;
 mod input;
 mod linter;
+mod logger;
 mod release;
 mod update;
 mod version;
 
+use anyhow::{anyhow, Result};
 use env_logger::{Builder, Env};
 use sentry::ClientInitGuard;
-use std::error::Error;
 use structopt::StructOpt;
 
 use crate::cli::commands::commit::CommitCommand;
-use crate::cli::CliCommand;
+use crate::cli::{CliCommand, Command};
+use crate::error::CliError;
+use crate::update::Updater;
 
 #[derive(StructOpt)]
 #[structopt(
@@ -42,7 +45,7 @@ struct Opt {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+async fn main() {
     Builder::from_env(Env::default().default_filter_or("info")).init();
     let mut _guard: ClientInitGuard;
 
@@ -50,52 +53,49 @@ async fn main() -> Result<(), Box<dyn Error>> {
         _guard = sentry::init((
             SENTRY_DSN,
             sentry::ClientOptions {
-                release: sentry::release_name!(),
+                release: Some(env!("CARGO_PKG_VERSION").into()),
                 ..Default::default()
             },
         ));
     }
 
+    if let Err(e) = run().await {
+        eprintln!("{}", e);
+        std::process::exit(1);
+    }
+}
+
+async fn run() -> Result<()> {
+    logger::info("Starting Committy...");
+
     let opt = Opt::from_args();
 
-    // Handle update commands
     if opt.check_update || opt.update {
-        let mut updater = update::Updater::new(env!("CARGO_PKG_VERSION"))?;
+        let mut updater = Updater::new(env!("CARGO_PKG_VERSION"))?;
         updater.with_prerelease(opt.pre_release);
+
         if opt.check_update {
-            if let Some(release) = updater.check_update().await? {
-                let pre_release_suffix = if update::Updater::is_prerelease(&release.version) {
-                    " (pre-release)"
-                } else {
-                    ""
-                };
-                println!(
-                    "New version {}{} available!",
-                    release.version, pre_release_suffix
-                );
-                println!(
-                    "Run 'committy --update{}' to update to this version",
-                    if opt.pre_release {
-                        " --pre-release"
-                    } else {
-                        ""
-                    }
-                );
-            } else {
-                println!(
-                    "You are running the latest{}version!",
-                    if opt.pre_release {
-                        " (including pre-release) "
-                    } else {
-                        " "
-                    }
-                );
+            logger::info("Checking for updates...");
+            match updater.check_update().await? {
+                Some(release) => {
+                    logger::info(&format!(
+                        "New version {} is available! Run with --update to upgrade",
+                        release.version
+                    ));
+                }
+                None => logger::success("You're on the latest version!"),
             }
             return Ok(());
         }
 
         if opt.update {
-            updater.update_to_latest()?;
+            logger::info("Starting update process...");
+            match updater.update_to_latest() {
+                Ok(_) => logger::success("Update completed successfully!"),
+                Err(e) => {
+                    return Err(anyhow!(e));
+                }
+            }
             return Ok(());
         }
     }
@@ -103,24 +103,26 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Check for staged changes before starting the interactive CLI
     if opt.cmd.is_none() {
         if let Err(e) = git::has_staged_changes() {
-            eprintln!("Error: {}", e);
-            std::process::exit(1);
+            return Err(anyhow!(e));
         }
         if !git::has_staged_changes().unwrap_or(false) {
-            eprintln!("Error: No staged changes found\nFor help, run 'committy --help'");
-            std::process::exit(1);
+            return Err(anyhow!(CliError::NoStagedChanges));
         }
     }
 
     let result = match opt.cmd {
         Some(cmd) => cmd.execute(),
-        None => CliCommand::Commit(CommitCommand::default()).execute(),
+        None => {
+            let cmd = CommitCommand::default();
+            cmd.execute()
+        }
     };
 
-    if let Err(e) = result {
-        eprintln!("Error: {}", e);
-        std::process::exit(1);
+    match result {
+        Ok(_) => {
+            logger::success("Operation completed successfully!");
+            Ok(())
+        }
+        Err(e) => Err(anyhow!(e)),
     }
-
-    Ok(())
 }
