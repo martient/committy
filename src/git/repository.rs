@@ -14,7 +14,7 @@ pub fn has_staged_changes() -> Result<bool, CliError> {
         .include_untracked(false)
         .include_unmodified(false)
         .exclude_submodules(true)
-        .show(StatusShow::Index);  // Only show index changes
+        .show(StatusShow::Index);
 
     let statuses = repo.statuses(Some(&mut opts))?;
 
@@ -31,29 +31,7 @@ pub fn has_staged_changes() -> Result<bool, CliError> {
         }
     }
 
-    // If HEAD exists, check for staged deletions
-    if let Ok(head) = repo.head() {
-        if let Ok(head_commit) = head.peel_to_commit() {
-            let head_tree = head_commit.tree()?;
-            let index = repo.index()?;
-
-            // Compare HEAD tree with index
-            for entry in head_tree.iter() {
-                if let Some(name) = entry.name() {
-                    if index.get_path(std::path::Path::new(name), 0).is_none() {
-                        return Ok(true);  // File exists in HEAD but not in index = staged deletion
-                    }
-                }
-            }
-        }
-    } else {
-        // No HEAD yet, check if there are any entries in the index
-        let index = repo.index()?;
-        if index.len() > 0 {
-            return Ok(true);  // New repository with staged files
-        }
-    }
-
+    // If we get here, there are no staged changes
     Ok(false)
 }
 

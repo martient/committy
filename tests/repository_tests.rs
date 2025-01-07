@@ -99,27 +99,21 @@ fn test_staged_deleted_file() -> Result<(), CliError> {
         )
         .unwrap();
 
-    // Verify the file exists in HEAD
-    if let Ok(obj) = repo.revparse_single("HEAD") {
-        if let Ok(commit) = obj.peel_to_commit() {
-            let tree = commit.tree().unwrap();
-            for entry in tree.iter() {
-                println!("   - {}", entry.name().unwrap_or(""));
-            }
-        }
-    }
-
     // Delete and stage the file
     fs::remove_file(&test_file).unwrap();
     let mut index = repo.index().unwrap();
     index.remove_path(std::path::Path::new("test.txt")).unwrap();
     index.write().unwrap();
 
-    // Check status flags
-    let _statuses = repo.statuses(None).unwrap();
+    // Change to the repository directory to ensure we're in the right context
+    let original_dir = env::current_dir().unwrap();
+    env::set_current_dir(temp_dir.path()).unwrap();
 
     // Verify that has_staged_changes detects the deleted file
     assert!(has_staged_changes()?);
+
+    env::set_current_dir(original_dir).unwrap();
+
     Ok(())
 }
 
@@ -179,7 +173,10 @@ fn test_unstaged_changes_only() -> Result<(), CliError> {
 
     // Verify no staged changes are detected
     let result = has_staged_changes()?;
-    assert!(!result, "Expected no staged changes with only unstaged files");
+    assert!(
+        !result,
+        "Expected no staged changes with only unstaged files"
+    );
 
     // Change back to the original directory
     env::set_current_dir(original_dir).unwrap();
