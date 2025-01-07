@@ -90,10 +90,18 @@ async fn run() -> Result<()> {
 
         if opt.update {
             logger::info("Starting update process...");
-            match updater.update_to_latest() {
-                Ok(_) => logger::success("Update completed successfully!"),
-                Err(e) => {
-                    return Err(anyhow!(e));
+            let update_check = updater.check_update().await?;
+            match update_check {
+                Some(release) => {
+                    match updater.update_to_version(&format!("v{}", release.version)) {
+                        Ok(_) => logger::success("Update completed successfully!"),
+                        Err(e) => {
+                            return Err(anyhow!(e));
+                        }
+                    }
+                }
+                None => {
+                    logger::success("You're already on the latest version!");
                 }
             }
             return Ok(());

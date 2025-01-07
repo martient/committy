@@ -100,11 +100,12 @@ impl Updater {
     }
 
     pub fn update_to_version(&self, version_tag: &str) -> Result<()> {
-        info!("Starting update process to version {}...", version_tag);
+        info!("Starting update process for version {}...", version_tag);
         let status = self_update::backends::github::Update::configure()
             .repo_owner(GITHUB_REPO_OWNER)
             .repo_name(GITHUB_REPO_NAME)
             .bin_name("committy")
+            .bin_path_in_archive("./committy")
             .target_version_tag(version_tag)
             .target(&format!("committy-{}.tar.gz", ASSET_SUFFIX))
             .show_download_progress(true)
@@ -120,16 +121,11 @@ impl Updater {
 
         Ok(())
     }
-
-    pub fn update_to_latest(&self) -> Result<()> {
-        self.update_to_version("latest")
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mockall::predicate::*;
 
     #[test]
     fn test_is_prerelease_detection() {

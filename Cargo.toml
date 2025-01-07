@@ -9,11 +9,10 @@ license-file = "LICENSE"
 include = ["/src", "LICENSE"]
 
 
-
 [dependencies]
 structopt = "0.3.26"
 inquire = "0.7.5"
-git2 = {version = "0.20.0", features = ["vendored-openssl"]}
+git2 = { version = "0.20.0", features = ["vendored-openssl"] }
 thiserror = "2.0.9"
 anyhow = "1.0.95"
 sentry = "0.36.0"
@@ -23,9 +22,13 @@ regex = "1.11.1"
 log = "0.4.22"
 env_logger = "0.11.6"
 strsim = "0.11.1"
-self_update = { version = "0.42.0", features = ["archive-tar", "compression-flate2", "archive-zip"] }
+self_update = { version = "0.42.0", features = [
+    "archive-tar",
+    "compression-flate2",
+    "archive-zip",
+] }
 tokio = { version = "1.42.0", features = ["full"] }
-colored = "2.0.4"
+colored = "3.0.0"
 indicatif = "0.17.7"
 
 [dev-dependencies]
