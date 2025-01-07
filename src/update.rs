@@ -1,8 +1,8 @@
 use anyhow::Result;
+use inquire::Confirm;
 use log::{info, warn};
 use self_update::update::Release;
 use semver::Version;
-use inquire::Confirm;
 
 const GITHUB_REPO_OWNER: &str = "martient";
 const GITHUB_REPO_NAME: &str = "committy";
@@ -110,12 +110,12 @@ impl Updater {
             .repo_owner(GITHUB_REPO_OWNER)
             .repo_name(GITHUB_REPO_NAME)
             .bin_name("committy")
-            .bin_path_in_archive("./committy") 
+            .bin_path_in_archive("./committy")
             .target_version_tag(&version_tag)
             .target(&format!("committy-{}.tar.gz", ASSET_SUFFIX))
             .show_download_progress(true)
             .current_version(&self.current_version.to_string())
-            .no_confirm(true)  // Disable built-in confirmation since we handle it ourselves
+            .no_confirm(true) // Disable built-in confirmation since we handle it ourselves
             .build()?
             .update()?;
 
@@ -133,8 +133,9 @@ impl Updater {
         if Self::is_prerelease(&new_version.to_string()) {
             return false;
         }
-        new_version.major > self.current_version.major || 
-        (new_version.major == self.current_version.major && new_version.minor > self.current_version.minor)
+        new_version.major > self.current_version.major
+            || (new_version.major == self.current_version.major
+                && new_version.minor > self.current_version.minor)
     }
 
     fn should_update(&self, new_version: &Version) -> bool {
@@ -165,11 +166,11 @@ impl Updater {
     }
 
     pub async fn check_and_prompt_update(&mut self) -> Result<Option<Release>> {
-        self.include_prerelease = Self::is_prerelease(&self.current_version.to_string());;
+        self.include_prerelease = Self::is_prerelease(&self.current_version.to_string());
 
         if let Some(release) = self.check_update().await? {
             let new_version = Version::parse(&release.version)?;
-            
+
             if !self.should_update(&new_version) {
                 return Ok(None);
             }

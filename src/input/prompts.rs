@@ -1,7 +1,6 @@
 use super::validation::{auto_correct_scope, validate_scope, validate_short_message};
 use crate::config::{COMMIT_TYPES, MAX_SHORT_DESCRIPTION_LENGTH};
 use crate::error::CliError;
-use crate::logger;
 use inquire::{Confirm, Select, Text};
 use log::info;
 

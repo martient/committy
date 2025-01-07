@@ -141,9 +141,7 @@ async fn run() -> Result<()> {
     };
 
     match result {
-        Ok(_) => {
-            Ok(())
-        }
+        Ok(_) => Ok(()),
         Err(e) => Err(e.into()),
     }
 }
