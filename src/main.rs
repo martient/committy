@@ -10,8 +10,8 @@ mod release;
 mod update;
 mod version;
 
-use sentry::ClientInitGuard;
 use env_logger::{Builder, Env};
+use sentry::ClientInitGuard;
 use std::error::Error;
 use structopt::StructOpt;
 
@@ -34,7 +34,10 @@ struct Opt {
     #[structopt(long = "update", help = "Update to the latest version")]
     update: bool,
 
-    #[structopt(long = "pre-release", help = "Include pre-release versions when checking or updating")]
+    #[structopt(
+        long = "pre-release",
+        help = "Include pre-release versions when checking or updating"
+    )]
     pre_release: bool,
 }
 
@@ -57,7 +60,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Handle update commands
     if opt.check_update || opt.update {
-        let updater = update::Updater::new(env!("CARGO_PKG_VERSION"))?.with_prerelease(opt.pre_release);
+        let mut updater = update::Updater::new(env!("CARGO_PKG_VERSION"))?;
+        updater.with_prerelease(opt.pre_release);
         if opt.check_update {
             if let Some(release) = updater.check_update().await? {
                 let pre_release_suffix = if update::Updater::is_prerelease(&release.version) {
@@ -65,12 +69,27 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 } else {
                     ""
                 };
-                println!("New version {}{} available!", release.version, pre_release_suffix);
-                println!("Run 'committy --update{}' to update to this version",
-                    if opt.pre_release { " --pre-release" } else { "" });
+                println!(
+                    "New version {}{} available!",
+                    release.version, pre_release_suffix
+                );
+                println!(
+                    "Run 'committy --update{}' to update to this version",
+                    if opt.pre_release {
+                        " --pre-release"
+                    } else {
+                        ""
+                    }
+                );
             } else {
-                println!("You are running the latest{}version!", 
-                    if opt.pre_release { " (including pre-release) " } else { " " });
+                println!(
+                    "You are running the latest{}version!",
+                    if opt.pre_release {
+                        " (including pre-release) "
+                    } else {
+                        " "
+                    }
+                );
             }
             return Ok(());
         }
