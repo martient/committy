@@ -66,8 +66,8 @@ fn test_commit_command_with_valid_input() {
     let mut cmd = Command::cargo_bin("committy").unwrap();
     cmd.current_dir(&temp_dir)
         .env("RUST_LOG", "info")
-        .arg("commit")
         .arg("--non-interactive")
+        .arg("commit")
         .arg("--type")
         .arg("feat")
         .arg("--scope")
@@ -97,8 +97,8 @@ fn test_commit_command_with_auto_correction() {
     let mut cmd = Command::cargo_bin("committy").unwrap();
     cmd.current_dir(&temp_dir)
         .env("RUST_LOG", "info")
-        .arg("commit")
         .arg("--non-interactive")
+        .arg("commit")
         .arg("--type")
         .arg("feature")
         .arg("--scope")
@@ -128,8 +128,8 @@ fn test_commit_command_with_invalid_input() {
     let mut cmd = Command::cargo_bin("committy").unwrap();
     cmd.current_dir(&temp_dir)
         .env("RUST_LOG", "info")
-        .arg("commit")
         .arg("--non-interactive")
+        .arg("commit")
         .arg("--type")
         .arg("invalid")
         .arg("--message")
@@ -148,8 +148,8 @@ fn test_commit_with_breaking_change() {
     let mut cmd = Command::cargo_bin("committy").unwrap();
     cmd.current_dir(&temp_dir)
         .env("RUST_LOG", "info")
-        .arg("commit")
         .arg("--non-interactive")
+        .arg("commit")
         .arg("--type")
         .arg("feat")
         .arg("--scope")

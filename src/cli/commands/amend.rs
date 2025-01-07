@@ -9,7 +9,13 @@ use structopt::StructOpt;
 pub struct AmendCommand {}
 
 impl Command for AmendCommand {
-    fn execute(&self) -> Result<(), CliError> {
+    fn execute(&self, non_interactive: bool) -> Result<(), CliError> {
+        if non_interactive {
+            return Err(CliError::InputError(
+                "Amend command is not supported in non-interactive mode".to_string(),
+            ));
+        }
+
         let commit_type = input::select_commit_type()?;
         let breaking_change = input::confirm_breaking_change()?;
         let scope = input::input_scope()?;

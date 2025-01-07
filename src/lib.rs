@@ -4,4 +4,7 @@ pub mod error;
 pub mod git;
 pub mod input;
 pub mod linter;
+pub mod logger;
+pub mod release;
+pub mod update;
 pub mod version;
