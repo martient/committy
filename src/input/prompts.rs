@@ -76,8 +76,6 @@ pub fn input_short_message() -> Result<String, CliError> {
         .with_validator(validator)
         .prompt()
         .map_err(|e| CliError::InputError(e.to_string()))?;
-
-    logger::success("Short description validated");
     Ok(msg)
 }
 
@@ -86,10 +84,6 @@ pub fn input_long_message() -> Result<String, CliError> {
         .with_help_message("Press Enter twice to finish")
         .prompt()
         .map_err(|e| CliError::InputError(e.to_string()))?;
-
-    if !msg.is_empty() {
-        logger::info("Added detailed description");
-    }
     Ok(msg)
 }
 

@@ -142,7 +142,6 @@ async fn run() -> Result<()> {
 
     match result {
         Ok(_) => {
-            logger::success("Operation completed successfully!");
             Ok(())
         }
         Err(e) => Err(e.into()),
