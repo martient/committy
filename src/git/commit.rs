@@ -1,6 +1,7 @@
 use crate::error::CliError;
 use git2::Repository;
 use super::repository::discover_repository;
+use std::env;
 
 pub fn commit_changes(message: &str, amend: bool) -> Result<(), CliError> {
     let repo = discover_repository()?;

@@ -8,7 +8,24 @@ pub fn discover_repository() -> Result<Repository, CliError> {
     log::debug!("Starting repository discovery from: {:?}", current_dir);
     
     match Repository::discover(&current_dir) {
-        Ok(repo) => Ok(repo),
+        Ok(repo) => {
+            // Get the absolute path to the repository root
+            let repo_path = repo.path()
+                .parent()
+                .and_then(|p| p.canonicalize().ok())
+                .ok_or_else(|| {
+                    CliError::GitError(git2::Error::from_str("Could not determine repository root directory"))
+                })?;
+            
+            // Open a new repository instance using the absolute path
+            match Repository::open(&repo_path) {
+                Ok(new_repo) => Ok(new_repo),
+                Err(e) => {
+                    log::error!("Failed to open repository at {:?}: {}", repo_path, e);
+                    Err(CliError::GitError(e))
+                }
+            }
+        },
         Err(e) => {
             log::error!("Failed to discover repository from {:?}: {}", current_dir, e);
             Err(CliError::GitError(git2::Error::from_str(

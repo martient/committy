@@ -56,7 +56,8 @@ fn test_repository_discovery_from_subdirectory() -> Result<(), CliError> {
 
     // Change to the deep subdirectory
     let original_dir = env::current_dir().unwrap();
-    env::set_current_dir(&subdir_path).unwrap();
+    env::set_current_dir(temp_dir.path()).unwrap();
+    env::set_current_dir("src/deep/path").unwrap();
 
     // Verify we can still detect the repository and check staged changes
     let result = has_staged_changes();
@@ -221,7 +222,8 @@ fn test_repository_discovery_without_staged_changes() -> Result<(), CliError> {
 
     // Change to the deep subdirectory
     let original_dir = env::current_dir().unwrap();
-    env::set_current_dir(&subdir_path).unwrap();
+    env::set_current_dir(temp_dir.path()).unwrap();
+    env::set_current_dir("src/deep/path").unwrap();
 
     // Verify we can detect the repository even without staged changes
     let result = has_staged_changes();
@@ -253,7 +255,13 @@ fn test_commit_from_subdirectory() -> Result<(), CliError> {
 
     // Change to the deep subdirectory
     let original_dir = env::current_dir().unwrap();
-    env::set_current_dir(&subdir_path).unwrap();
+    env::set_current_dir(temp_dir.path()).unwrap();
+
+    // Create a new repository object from the current directory
+    let repo = Repository::discover(".").unwrap();
+
+    // Change to the subdirectory
+    env::set_current_dir("src/deep/path").unwrap();
 
     // Verify staged changes are detected
     let has_changes = has_staged_changes()?;
@@ -267,6 +275,10 @@ fn test_commit_from_subdirectory() -> Result<(), CliError> {
     let head_commit = repo.head()?.peel_to_commit()?;
     let head_message = head_commit.message().unwrap_or("");
     assert_eq!(head_message, commit_message, "Expected commit message '{}' but got '{}'", commit_message, head_message);
+
+    // Get the parent commit to verify the history
+    let parent_commit = head_commit.parent(0)?;
+    assert_eq!(parent_commit.message().unwrap_or(""), "Initial commit", "Expected parent commit to be 'Initial commit'");
 
     // Change back to the original directory
     env::set_current_dir(original_dir).unwrap();
