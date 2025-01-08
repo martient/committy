@@ -15,6 +15,10 @@ on:
 jobs:
   create-release:
     runs-on: ubuntu-latest
+    outputs:
+      is_prerelease: ${{ steps.release_type.outputs.is_prerelease }}
+      draft: ${{ steps.release_type.outputs.draft }}
+      changelog: ${{ steps.changelog.outputs.changelog }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -188,9 +192,13 @@ jobs:
             sha256sum "${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz" > "${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz.sha256"
           fi
 
-      - name: Upload Release Asset
+      - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
         with:
+          name: ${{ needs.create-release.outputs.is_prerelease == 'true' && format('Pre-release {0}', github.ref_name) || format('Release {0}', github.ref_name) }}
+          prerelease: ${{ needs.create-release.outputs.is_prerelease }}
+          body: ${{ needs.create-release.outputs.changelog }}
+          draft: ${{ needs.create-release.outputs.draft }}
           files: |
             ${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz
             ${{ env.BINARY_NAME }}-${{ matrix.asset_suffix }}.tar.gz.sha256
