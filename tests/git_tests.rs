@@ -137,6 +137,7 @@ fn test_unstaged_changes() {
 #[test]
 fn test_commit_without_git_config() {
     let temp_dir = setup_git_repo_without_config();
+    let home_dir = tempdir().expect("Failed to create temp home directory");
 
     // Create and stage a test file
     let test_file = temp_dir.path().join("test.txt");
@@ -154,7 +155,7 @@ fn test_commit_without_git_config() {
         .env("GIT_COMMITTER_EMAIL", "")
         .env("GIT_AUTHOR_NAME", "")
         .env("GIT_AUTHOR_EMAIL", "")
-        .env("HOME", "/dev/null") // Prevent git from finding global config
+        .env("HOME", home_dir.path()) // Use temp directory as HOME
         .arg("--non-interactive")
         .arg("commit")
         .arg("--type")

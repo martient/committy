@@ -82,10 +82,20 @@ impl Updater {
 
     pub async fn check_update(&self) -> Result<Option<Release>> {
         let releases = self.release_provider.fetch_releases()?;
+        let current_is_prerelease = Self::is_prerelease(&self.current_version.to_string());
 
         let available_releases: Vec<&Release> = releases
             .iter()
-            .filter(|release| self.include_prerelease || !Self::is_prerelease(&release.version))
+            .filter(|release| {
+                let is_release_prerelease = Self::is_prerelease(&release.version);
+                // If current version is pre-release, only show pre-releases
+                // If current version is stable, only show stable releases unless explicitly including pre-releases
+                if current_is_prerelease {
+                    is_release_prerelease
+                } else {
+                    self.include_prerelease || !is_release_prerelease
+                }
+            })
             .collect();
 
         if let Some(latest_release) = available_releases.first() {

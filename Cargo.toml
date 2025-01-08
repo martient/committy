@@ -16,7 +16,7 @@ git2 = { version = "0.20.0", features = ["vendored-openssl"] }
 thiserror = "2.0.9"
 anyhow = "1.0.95"
 sentry = "0.36.0"
-chrono = "0.4.39"
+chrono = { version = "0.4.39", features = ["serde"] }
 semver = "1.0.24"
 regex = "1.11.1"
 log = "0.4.22"
@@ -27,9 +27,12 @@ self_update = { version = "0.42.0", features = [
     "compression-flate2",
     "archive-zip",
 ] }
-tokio = { version = "1.42.0", features = ["full"] }
+tokio = { version = "1.43.0", features = ["full"] }
 colored = "3.0.0"
 indicatif = "0.17.7"
+serde = { version = "1.0.217", features = ["derive"] }
+toml = "0.8.8"
+dirs = "5.0.1"
 
 [dev-dependencies]
 assert_cmd = "2.0.12"

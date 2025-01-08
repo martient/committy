@@ -2,6 +2,7 @@ use colored::*;
 use log::{error, info, warn};
 
 /// Print a success message with a green checkmark
+#[allow(dead_code)]
 pub fn success(msg: &str) {
     info!("{} {}", "✓".green(), msg);
 }

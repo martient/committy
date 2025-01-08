@@ -11,15 +11,17 @@ mod release;
 mod update;
 mod version;
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use env_logger::{Builder, Env};
 use sentry::ClientInitGuard;
 use structopt::StructOpt;
 
 use crate::cli::commands::commit::CommitCommand;
 use crate::cli::{CliCommand, Command};
+use crate::config::Config;
 use crate::error::CliError;
 use crate::update::Updater;
+use chrono::{DateTime, Duration};
 
 #[derive(StructOpt)]
 #[structopt(
@@ -45,31 +47,73 @@ struct Opt {
 
     #[structopt(long = "non-interactive", help = "Run in non-interactive mode")]
     non_interactive: bool,
+
+    #[structopt(long = "metrics-toggle", help = "Toggle metrics collection on/off")]
+    metrics_toggle: bool,
 }
 
 #[tokio::main]
 async fn main() {
     Builder::from_env(Env::default().default_filter_or("info")).init();
-    let mut _guard: ClientInitGuard;
 
-    if SENTRY_DSN != "undefined" {
-        _guard = sentry::init((
-            SENTRY_DSN,
-            sentry::ClientOptions {
-                release: Some(env!("CARGO_PKG_VERSION").into()),
-                ..Default::default()
-            },
-        ));
-    }
+    // Load configuration
+    let mut config = Config::load().unwrap_or_else(|_| {
+        let default_config = Config::default();
+        if let Err(e) = default_config.save() {
+            eprintln!("Failed to save default configuration: {}", e);
+        }
+        default_config
+    });
 
-    if let Err(e) = run().await {
+    if let Err(e) = run(&mut config).await {
         eprintln!("{}", e);
         std::process::exit(1);
     }
 }
 
-async fn run() -> Result<()> {
+async fn run(config: &mut Config) -> Result<()> {
     let opt = Opt::from_args();
+
+    if opt.metrics_toggle {
+        config.metrics_enabled = !config.metrics_enabled;
+        logger::info(&format!(
+            "Metrics collection has been {} ",
+            if config.metrics_enabled {
+                "enabled"
+            } else {
+                "disabled"
+            }
+        ));
+        config.save()?;
+        return Ok(());
+    }
+
+    let current_time = DateTime::parse_from_rfc3339("2025-01-08T17:49:53+01:00").unwrap();
+    let one_week = Duration::days(7);
+    let one_day = Duration::days(1);
+    let mut config_updated = false;
+
+    // Show metrics reminder if enabled and it's been a week
+    if config.metrics_enabled && current_time - config.last_metrics_reminder >= one_week {
+        logger::info(
+            " Metrics collection is enabled to help improve Committy. You can opt-out anytime with --metrics-toggle",
+        );
+        config.last_metrics_reminder = current_time;
+        config_updated = true;
+    }
+
+    // Initialize sentry if metrics are enabled
+    let _guard: Option<ClientInitGuard> = if config.metrics_enabled && SENTRY_DSN != "undefined" {
+        Some(sentry::init((
+            SENTRY_DSN,
+            sentry::ClientOptions {
+                release: Some(env!("CARGO_PKG_VERSION").into()),
+                ..Default::default()
+            },
+        )))
+    } else {
+        None
+    };
 
     if opt.check_update || opt.update {
         let mut updater = Updater::new(env!("CARGO_PKG_VERSION"))?;
@@ -77,49 +121,38 @@ async fn run() -> Result<()> {
             .with_prerelease(opt.pre_release)
             .with_non_interactive(opt.non_interactive);
 
-        if opt.check_update {
-            logger::info("Checking for updates...");
-            match updater.check_update().await? {
-                Some(release) => {
-                    logger::info(&format!(
-                        "New version {} is available! Run with --update to upgrade",
-                        release.version
-                    ));
-                }
-                None => logger::success("You're on the latest version!"),
-            }
-            return Ok(());
-        }
+        if let Some(release) = updater.check_update().await? {
+            logger::info(&format!("New version {} is available!", release.version));
 
-        if opt.update {
-            logger::info("Starting update process...");
-            let update_check = updater.check_update().await?;
-            match update_check {
-                Some(release) => {
-                    match updater.update_to_version(&format!("v{}", release.version)) {
-                        Ok(_) => logger::success("Update completed successfully!"),
-                        Err(e) => {
-                            return Err(anyhow!(e));
-                        }
-                    }
-                }
-                None => {
-                    logger::success("You're already on the latest version!");
-                }
+            if opt.update && (updater.check_and_prompt_update().await?).is_some() {
+                config.last_update_check = current_time;
+                config_updated = true;
             }
-            return Ok(());
+        } else if opt.check_update {
+            logger::info("You're running the latest version!");
+            config.last_update_check = current_time;
+            config_updated = true;
         }
     }
 
-    // Check for major/minor updates when running any command
-    if !opt.non_interactive && !opt.check_update && !opt.update {
+    // Check for updates when running any command
+    if !opt.non_interactive
+        && !opt.check_update
+        && !opt.update
+        && current_time - config.last_update_check >= one_day
+    {
         let mut updater = Updater::new(env!("CARGO_PKG_VERSION"))?;
-        if let Some(release) = updater.check_and_prompt_update().await? {
-            match updater.update_to_version(&format!("v{}", release.version)) {
-                Ok(_) => logger::success("Update completed successfully!"),
-                Err(e) => logger::error(&format!("Update failed: {}", e)),
-            }
+        updater.with_prerelease(true);
+        if (updater.check_and_prompt_update().await?).is_some() {
+            // if let Some(_) = updater.check_and_prompt_update().await? {
+            config.last_update_check = current_time;
+            config_updated = true;
         }
+    }
+
+    // Save config only if it was updated
+    if config_updated {
+        config.save()?;
     }
 
     // Check for staged changes before starting the interactive CLI
