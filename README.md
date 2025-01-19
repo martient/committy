@@ -26,8 +26,8 @@ Plus, it's a great way to learn and practice Rust programming!
 
 ### Installation
 
-```shell
-cargo install committy
+```
+curl -fsSL https://raw.githubusercontent.com/martient/committy/refs/heads/main/install.sh | bash
 ```
 
 ### Basic Usage
