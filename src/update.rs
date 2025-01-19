@@ -30,7 +30,7 @@ impl ReleaseProvider for GitHubReleaseProvider {
 }
 
 pub struct Updater {
-    current_version: Version,
+    pub current_version: Version,
     include_prerelease: bool,
     release_provider: Box<dyn ReleaseProvider>,
     non_interactive: bool,
@@ -87,13 +87,17 @@ impl Updater {
         let available_releases: Vec<&Release> = releases
             .iter()
             .filter(|release| {
-                let is_release_prerelease = Self::is_prerelease(&release.version);
-                // If current version is pre-release, only show pre-releases
-                // If current version is stable, only show stable releases unless explicitly including pre-releases
-                if current_is_prerelease {
-                    is_release_prerelease
+                if self.include_prerelease {
+                    true
                 } else {
-                    self.include_prerelease || !is_release_prerelease
+                    let is_release_prerelease = Self::is_prerelease(&release.version);
+                    // If current version is pre-release, only show pre-releases
+                    // If current version is stable, only show stable releases unless explicitly including pre-releases
+                    if current_is_prerelease {
+                        is_release_prerelease
+                    } else {
+                        !is_release_prerelease
+                    }
                 }
             })
             .collect();
@@ -104,8 +108,6 @@ impl Updater {
                 return Ok(Some((*latest_release).clone()));
             }
         }
-
-        info!("No updates available");
         Ok(None)
     }
 
@@ -176,8 +178,6 @@ impl Updater {
     }
 
     pub fn check_and_prompt_update(&mut self) -> Result<Option<Release>> {
-        self.include_prerelease = Self::is_prerelease(&self.current_version.to_string());
-
         if let Ok(Some(release)) = self.check_update() {
             let new_version = Version::parse(&release.version)?;
 

@@ -120,14 +120,10 @@ fn run(config: &mut Config) -> Result<()> {
             .with_prerelease(opt.pre_release)
             .with_non_interactive(opt.non_interactive);
 
-        if let Ok(Some(release)) = updater.check_update() {
-            logger::info(&format!("New version {} is available!", release.version));
-
-            if opt.update && (updater.check_and_prompt_update()).is_ok() {
-                config.last_update_check = current_time;
-                config_updated = true;
-            }
-        } else if opt.check_update {
+        if opt.update && (updater.check_and_prompt_update()).is_ok() {
+            config.last_update_check = current_time;
+            config_updated = true;
+        } else {
             logger::info("You're running the latest version!");
             config.last_update_check = current_time;
             config_updated = true;
@@ -141,7 +137,7 @@ fn run(config: &mut Config) -> Result<()> {
         && current_time - config.last_update_check >= one_day
     {
         let mut updater = Updater::new(env!("CARGO_PKG_VERSION"))?;
-        updater.with_prerelease(true);
+        updater.with_prerelease(Updater::is_prerelease(&updater.current_version.to_string()));
         if (updater.check_and_prompt_update()).is_ok() {
             // if let Some(_) = updater.check_and_prompt_update().await? {
             config.last_update_check = current_time;
