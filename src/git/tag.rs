@@ -2,7 +2,7 @@ use std::env;
 
 use crate::version::VersionManager;
 use crate::{config, error::CliError};
-use git2::{FetchOptions, Oid, RemoteCallbacks, Repository};
+use git2::{FetchOptions, Oid, RemoteCallbacks, Repository, PushOptions};
 use log::{debug, error, info};
 use regex::Regex;
 use semver::Version;
@@ -503,8 +503,36 @@ impl TagGenerator {
         if !self.dry_run && !self.not_publish {
             match repo.find_remote("origin") {
                 Ok(mut remote) => {
+                    let mut callbacks = RemoteCallbacks::new();
+                    callbacks.credentials(|_url, username_from_url, _allowed_types| {
+                        git2::Cred::ssh_key(
+                            username_from_url.unwrap_or("git"),
+                            None,
+                            std::path::Path::new(&format!(
+                                "{}/.ssh/id_rsa",
+                                std::env::var("HOME").unwrap()
+                            )),
+                            None,
+                        )
+                    });
+
+                    let mut push_options = PushOptions::new();
+                    push_options.remote_callbacks(callbacks);
+
                     let refspec = format!("refs/tags/{}", new_tag);
-                    remote.push(&[&refspec], None)?;
+                    match remote.push(&[&refspec], Some(&mut push_options)) {
+                        Ok(_) => debug!("Successfully pushed tag {} to remote", new_tag),
+                        Err(e) => {
+                            error!("Failed to push tag {} to remote: {}", new_tag, e);
+                            if e.code() == git2::ErrorCode::Auth {
+                                error!(
+                                    "Authentication error. Please ensure your SSH key is set up correctly."
+                                );
+                                error!("You may need to add your SSH key to the ssh-agent or use HTTPS with a personal access token.");
+                            }
+                            return Err(e.into());
+                        }
+                    }
                 }
                 Err(e) if e.code() == git2::ErrorCode::NotFound => {
                     debug!("Remote 'origin' not found, skipping push");
