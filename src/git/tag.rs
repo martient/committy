@@ -29,9 +29,6 @@ pub struct TagGeneratorOptions {
     #[structopt(long, help = "Perform a dry run without creating tags")]
     dry_run: bool,
 
-    #[structopt(long, help = "Use Git API for tagging")]
-    git_api_tagging: bool,
-
     #[structopt(
         long,
         default_value = "0.0.0",
@@ -62,14 +59,12 @@ pub struct TagGeneratorOptions {
     not_publish: bool,
 }
 
-#[allow(dead_code)]
 pub struct TagGenerator {
     default_bump: String,
     not_with_v: bool,
     release_branches: Vec<String>,
     source: String,
     dry_run: bool,
-    git_api_tagging: bool,
     initial_version: String,
     prerelease: bool,
     suffix: String,
@@ -92,7 +87,6 @@ impl TagGenerator {
                 .collect(),
             source: options.source,
             dry_run: options.dry_run,
-            git_api_tagging: options.git_api_tagging,
             initial_version: options.initial_version,
             prerelease: options.prerelease,
             suffix: options.prerelease_suffix,
