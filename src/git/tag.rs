@@ -2,7 +2,7 @@ use std::env;
 
 use crate::version::VersionManager;
 use crate::{config, error::CliError};
-use git2::{FetchOptions, Oid, RemoteCallbacks, Repository, PushOptions};
+use git2::{FetchOptions, Oid, PushOptions, RemoteCallbacks, Repository};
 use log::{debug, error, info};
 use regex::Regex;
 use semver::Version;
@@ -62,6 +62,7 @@ pub struct TagGeneratorOptions {
     not_publish: bool,
 }
 
+#[allow(dead_code)]
 pub struct TagGenerator {
     default_bump: String,
     not_with_v: bool,
@@ -491,13 +492,7 @@ impl TagGenerator {
         };
 
         // Create tag
-        repo.tag(
-            new_tag,
-            head.as_object(),
-            &signature,
-            tag_message,
-            false,
-        )?;
+        repo.tag(new_tag, head.as_object(), &signature, tag_message, false)?;
 
         // Only try to push if not in dry run mode and not explicitly set to not publish
         if !self.dry_run && !self.not_publish {

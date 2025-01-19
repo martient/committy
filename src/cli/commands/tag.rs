@@ -31,7 +31,8 @@ impl Command for TagCommand {
         }
 
         if let Some(name) = &self.name {
-            let version_manager = git::TagGenerator::new(self.tag_options.clone(), self.bump_config_files);
+            let version_manager =
+                git::TagGenerator::new(self.tag_options.clone(), self.bump_config_files);
             version_manager.create_and_push_tag(&version_manager.open_repository()?, name)?;
             println!("Tag {} created successfully!", name);
         } else {
