@@ -52,8 +52,7 @@ struct Opt {
     metrics_toggle: bool,
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
     Builder::from_env(Env::default().default_filter_or("info")).init();
 
     // Load configuration
@@ -65,13 +64,13 @@ async fn main() {
         default_config
     });
 
-    if let Err(e) = run(&mut config).await {
+    if let Err(e) = run(&mut config) {
         eprintln!("{}", e);
         std::process::exit(1);
     }
 }
 
-async fn run(config: &mut Config) -> Result<()> {
+fn run(config: &mut Config) -> Result<()> {
     let opt = Opt::from_args();
 
     if opt.metrics_toggle {
@@ -121,10 +120,10 @@ async fn run(config: &mut Config) -> Result<()> {
             .with_prerelease(opt.pre_release)
             .with_non_interactive(opt.non_interactive);
 
-        if let Some(release) = updater.check_update().await? {
+        if let Ok(Some(release)) = updater.check_update() {
             logger::info(&format!("New version {} is available!", release.version));
 
-            if opt.update && (updater.check_and_prompt_update().await?).is_some() {
+            if opt.update && (updater.check_and_prompt_update()).is_ok() {
                 config.last_update_check = current_time;
                 config_updated = true;
             }
@@ -143,7 +142,7 @@ async fn run(config: &mut Config) -> Result<()> {
     {
         let mut updater = Updater::new(env!("CARGO_PKG_VERSION"))?;
         updater.with_prerelease(true);
-        if (updater.check_and_prompt_update().await?).is_some() {
+        if (updater.check_and_prompt_update()).is_ok() {
             // if let Some(_) = updater.check_and_prompt_update().await? {
             config.last_update_check = current_time;
             config_updated = true;
