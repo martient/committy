@@ -53,6 +53,8 @@ impl Config {
 
     pub fn save(&self) -> Result<()> {
         let config_path = Self::get_config_path()?;
+        info!("Saving configuration");
+        info!("Configuration path: {:?}", config_path);
         debug!("Saving configuration to {:?}", config_path);
 
         if let Some(parent) = config_path.parent() {
@@ -81,10 +83,15 @@ mod tests {
     use super::*;
     use std::env;
     use std::fs;
+    use tempfile::Builder;
     use tempfile::TempDir;
+    use uuid::Uuid;
 
     fn setup_test_env() -> (TempDir, Config) {
-        let temp_dir = TempDir::new().unwrap();
+        let uuid = Uuid::new_v4();
+        let temp_dir = Builder::new().prefix(&uuid.to_string()).tempdir().unwrap();
+
+        // let temp_dir = TempDir::new(Uuid::new_v4().to_string()).unwrap();
         env::set_var("HOME", temp_dir.path());
 
         let config = Config {
@@ -139,6 +146,7 @@ mod tests {
         // Loading non-existent config should return default
         let config = Config::load().expect("Failed to load default config");
         assert!(config.metrics_enabled);
+
         assert_eq!(
             config.last_update_check.to_rfc3339(),
             "2006-01-01T00:00:00+01:00"
