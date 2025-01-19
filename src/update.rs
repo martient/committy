@@ -80,7 +80,7 @@ impl Updater {
             || version.contains("rc")
     }
 
-    pub async fn check_update(&self) -> Result<Option<Release>> {
+    pub fn check_update(&self) -> Result<Option<Release>> {
         let releases = self.release_provider.fetch_releases()?;
         let current_is_prerelease = Self::is_prerelease(&self.current_version.to_string());
 
@@ -175,10 +175,10 @@ impl Updater {
         !new_is_pre && self.is_major_or_minor_update(new_version)
     }
 
-    pub async fn check_and_prompt_update(&mut self) -> Result<Option<Release>> {
+    pub fn check_and_prompt_update(&mut self) -> Result<Option<Release>> {
         self.include_prerelease = Self::is_prerelease(&self.current_version.to_string());
 
-        if let Some(release) = self.check_update().await? {
+        if let Ok(Some(release)) = self.check_update() {
             let new_version = Version::parse(&release.version)?;
 
             if !self.should_update(&new_version) {
@@ -279,8 +279,7 @@ mod tests {
             .unwrap()
             .with_provider(Box::new(mock_provider));
 
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let result = rt.block_on(updater.check_update());
+        let result = updater.check_update();
         assert!(result.is_ok());
         assert!(result.unwrap().is_none());
     }
@@ -305,8 +304,7 @@ mod tests {
             .unwrap()
             .with_provider(Box::new(mock_provider));
 
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let result = rt.block_on(updater.check_update());
+        let result = updater.check_update();
         assert!(result.is_ok());
         assert!(result.unwrap().is_some());
     }
@@ -331,8 +329,7 @@ mod tests {
             .unwrap()
             .with_provider(Box::new(mock_provider));
 
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let result = rt.block_on(updater.check_update());
+        let result = updater.check_update();
         assert!(result.is_ok());
         assert!(result.unwrap().is_none());
     }
@@ -366,17 +363,15 @@ mod tests {
             .unwrap()
             .with_provider(Box::new(mock_provider));
 
-        let rt = tokio::runtime::Runtime::new().unwrap();
-
         // Without pre-release flag
         updater.with_prerelease(false);
-        let result = rt.block_on(updater.check_update());
+        let result = updater.check_update();
         assert!(result.is_ok());
         assert!(result.unwrap().is_none());
 
         // With pre-release flag
         updater.with_prerelease(true);
-        let result = rt.block_on(updater.check_update());
+        let result = updater.check_update();
         assert!(result.is_ok());
         let release = result.unwrap().unwrap();
         assert_eq!(release.version, "2.0.0-beta.1");
