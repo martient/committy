@@ -282,9 +282,7 @@ impl TagGenerator {
     }
 
     fn should_skip_tagging(&self, tag_commit: Option<Oid>, current_commit: Oid) -> bool {
-        tag_commit.map_or(false, |commit| {
-            commit == current_commit && !self.force_without_change
-        })
+        tag_commit.is_some_and(|commit| commit == current_commit && !self.force_without_change)
     }
 
     fn calculate_new_tag(
