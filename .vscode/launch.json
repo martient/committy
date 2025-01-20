@@ -5,6 +5,13 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "command": "./node_modules/.bin/astro dev",
+            "cwd": "${workspaceFolder}/docs",
+            "name": "DOC DEV",
+            "request": "launch",
+            "type": "node-terminal"
+          },
+        {
             "type": "lldb",
             "request": "launch",
             "name": "Debug executable 'committy'",
