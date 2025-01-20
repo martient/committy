@@ -57,42 +57,42 @@ impl VersionManager {
         // Cargo.toml (Rust)
         self.add_version_file(
             Path::new("Cargo.toml"),
-            r#"(?m)^\s*version\s*=\s*"[^"]*""#, // (?m) enables multiline mode, ^ ensures start of line
+            r#"(?m)^version\s*=\s*"(\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?(?:\+[a-zA-Z0-9.-]+)?)"(?:\s*#[^\n]*)?"#,
             r#"version = "{}""#,
         )?;
 
         // package.json (Node.js)
         self.add_version_file(
             Path::new("package.json"),
-            r#""version"\s*:\s*"[^"]*""#,
+            r#""version":\s*"(\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?(?:\+[a-zA-Z0-9.-]+)?)"(?:\s*//[^\n]*)?"#,
             r#""version": "{}""#,
         )?;
 
         // pyproject.toml (Python)
         self.add_version_file(
             Path::new("pyproject.toml"),
-            r#"version\s*=\s*"[^"]*""#,
+            r#"(?m)^version\s*=\s*"(\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?(?:\+[a-zA-Z0-9.-]+)?)"(?:\s*#[^\n]*)?"#,
             r#"version = "{}""#,
         )?;
 
         // composer.json (PHP)
         self.add_version_file(
             Path::new("composer.json"),
-            r#""version"\s*:\s*"[^"]*""#,
+            r#""version":\s*"(\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?(?:\+[a-zA-Z0-9.-]+)?)"(?:\s*//[^\n]*)?"#,
             r#""version": "{}""#,
         )?;
 
         // pom.xml (Java)
         self.add_version_file(
             Path::new("pom.xml"),
-            r#"<version>[^<]*</version>"#,
+            r#"<version>(\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?(?:\+[a-zA-Z0-9.-]+)?)</version>"#,
             "<version>{}</version>",
         )?;
 
         // *.csproj (.NET)
         self.add_version_file(
             Path::new("*.csproj"),
-            r#"<Version>[^<]*</Version>"#,
+            r#"<Version>(\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?(?:\+[a-zA-Z0-9.-]+)?)</Version>"#,
             "<Version>{}</Version>",
         )?;
 
