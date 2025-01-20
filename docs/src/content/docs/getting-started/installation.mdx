@@ -1,0 +1,37 @@
+---
+title: Installation
+description: How to install committy
+---
+import { Code } from '@astrojs/starlight/components';
+
+Committy is shipped as a single executable file, which you can download from the [releases page](https://github.com/martient/committy/releases), but you can install it using different methods.
+
+## Installing
+
+### Linux and macOS
+
+#### Curl
+
+<Code code="curl -fsSL https://committy.martient.com/install | bash" lang="bash" title="CURL" />
+
+#### Direct download
+
+latest release: https://github.com/martient/committy/releases/latest
+
+Find the asset for your platform and download it, then extract it to a directory of your choice. We recommend using `$HOME/.committy` as the install directory.
+
+Do not forget to add the directory to your `$PATH` and save it in your `$HOME/.bashrc` or `$HOME/.zshrc`:
+
+<Code code='export PATH="$HOME/.committy/bin:\$PATH"' lang="bash" title="PATH" />
+
+## Check your installation
+
+Reload your current shell to ensure the committy binary is in your `$PATH`:
+
+<Code code="exec \$SHELL" lang="bash" title="Reload shell" />
+
+then run:
+
+<Code code="committy --version" lang="bash" title="Run committy" />
+
+You should see the current version of committy !
