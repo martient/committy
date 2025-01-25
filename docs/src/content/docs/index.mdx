@@ -1,0 +1,36 @@
+---
+title: Committy
+description: Generate clear, concise, and structured commit messages effortlessly with Committy!
+template: splash
+hero:
+  tagline: Generate clear, concise, and structured commit messages effortlessly
+#   image:
+#     file: ../../assets/houston.webp
+  actions:
+    - text: Install committy
+      link: /getting-started/installation/
+      icon: right-arrow
+    - text: Read more about Committy
+      link: /getting-started/what-is-committy/
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## Next steps
+
+<CardGrid stagger>
+	<Card title="Install committy" icon="pencil">
+		Install committy with the `curl -fsSL https://committy.martient.com/install | bash` command
+	</Card>
+	<Card title="Add your latest changes" icon="add-document">
+		Add your changes with `git add`
+	</Card>
+	<Card title="Build your commit message" icon="pencil">
+		Build your commit message with `committy`
+	</Card>
+	<Card title="Push it to your repo" icon="rocket">
+		Push your changes to your repo
+	</Card>
+</CardGrid>
