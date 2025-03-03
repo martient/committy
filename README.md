@@ -40,7 +40,7 @@ committy
 
 #### Demo
 
-![Commit demo](docs/commit.gif)
+![Commit demo](docs/public/demos/commit.gif)
 
 ## 🛠 Options and Commands
 
@@ -52,7 +52,7 @@ committy amend
 
 #### Demo
 
-![Amend demo](docs/amend.gif)
+![Amend demo](docs/public/demos/amend.gif)
 
 ### Create a short commit
 

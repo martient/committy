@@ -469,6 +469,60 @@ impl TagGenerator {
             &[&parent_commit],
         )?;
 
+        // Push the commit to remote if we're not in dry run mode and not set to not publish
+        if !self.dry_run && !self.not_publish {
+            info!("🔄 Pushing version bump commit to remote");
+            match repo.find_remote("origin") {
+                Ok(mut remote) => {
+                    let mut callbacks = RemoteCallbacks::new();
+                    callbacks.credentials(|_url, username_from_url, _allowed_types| {
+                        git2::Cred::ssh_key(
+                            username_from_url.unwrap_or("git"),
+                            None,
+                            std::path::Path::new(&format!(
+                                "{}/.ssh/id_rsa",
+                                std::env::var("HOME").unwrap()
+                            )),
+                            None,
+                        )
+                    });
+
+                    let mut push_options = PushOptions::new();
+                    push_options.remote_callbacks(callbacks);
+
+                    let current_branch = self.get_current_branch(repo)?;
+                    let refspec = format!("refs/heads/{}", current_branch);
+
+                    match remote.push(&[&refspec], Some(&mut push_options)) {
+                        Ok(_) => {
+                            debug!(
+                                "Successfully pushed commit to remote branch {}",
+                                current_branch
+                            );
+                            info!(
+                                "✅ Pushed version bump commit to remote branch {}",
+                                current_branch
+                            );
+                        }
+                        Err(e) => {
+                            error!("Failed to push commit to remote: {}", e);
+                            if e.code() == git2::ErrorCode::Auth {
+                                error!(
+                                    "Authentication error. Please ensure your SSH key is set up correctly."
+                                );
+                                error!("You may need to add your SSH key to the ssh-agent or use HTTPS with a personal access token.");
+                            }
+                            return Err(e.into());
+                        }
+                    }
+                }
+                Err(e) if e.code() == git2::ErrorCode::NotFound => {
+                    debug!("Remote 'origin' not found, skipping push");
+                }
+                Err(e) => return Err(e.into()),
+            }
+        }
+
         Ok(())
     }
 
