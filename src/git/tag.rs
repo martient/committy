@@ -492,12 +492,18 @@ impl TagGenerator {
 
                     let current_branch = self.get_current_branch(repo)?;
                     let refspec = format!("refs/heads/{}", current_branch);
-                    
+
                     match remote.push(&[&refspec], Some(&mut push_options)) {
                         Ok(_) => {
-                            debug!("Successfully pushed commit to remote branch {}", current_branch);
-                            info!("✅ Pushed version bump commit to remote branch {}", current_branch);
-                        },
+                            debug!(
+                                "Successfully pushed commit to remote branch {}",
+                                current_branch
+                            );
+                            info!(
+                                "✅ Pushed version bump commit to remote branch {}",
+                                current_branch
+                            );
+                        }
                         Err(e) => {
                             error!("Failed to push commit to remote: {}", e);
                             if e.code() == git2::ErrorCode::Auth {
@@ -555,7 +561,7 @@ impl TagGenerator {
                     push_options.remote_callbacks(callbacks);
 
                     let refspec = format!("refs/tags/{}", new_tag);
-                    
+
                     match remote.push(&[&refspec], Some(&mut push_options)) {
                         Ok(_) => debug!("Successfully pushed tag {} to remote", new_tag),
                         Err(e) => {
