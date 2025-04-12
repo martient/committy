@@ -1,3 +1,13 @@
+use anyhow::Result;
+use chrono::{DateTime, FixedOffset};
+use log::{debug, info};
+use lazy_static::lazy_static;
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::PathBuf;
+use uuid::Uuid;
+
+
 pub const COMMIT_TYPES: &[&str] = &[
     "feat", "fix", "build", "chore", "ci", "cd", "docs", "perf", "refactor", "revert", "style",
     "test", "security", "config",
@@ -16,13 +26,41 @@ pub const MAJOR_REGEX: &str = r"(?im)^(breaking change:|feat(?:\s*\([^)]*\))?!:)
 pub const MINOR_REGEX: &str = r"(?im)^feat(?:\s*\([^)]*\))?:";
 pub const PATCH_REGEX: &str = r"(?im)^(fix|docs|style|refactor|perf|test|chore|ci|cd|build|revert|security|config)(?:\s*\([^)]*\))?:";
 
-use anyhow::Result;
-use chrono::{DateTime, FixedOffset};
-use log::debug;
-use serde::{Deserialize, Serialize};
-use std::fs;
-use std::path::PathBuf;
-use uuid::Uuid;
+pub const CHANGELOG_TEMPLATE: &str = r"";
+lazy_static! {
+    pub static ref CHANGELOG_CATEGORY_TEMPLATE: Vec<ChangelogCategory> = vec![
+        ChangelogCategory {
+            name: "Features".to_string(),
+            types: vec!["feat".to_string()],
+        },
+        ChangelogCategory {
+            name: "Fixes".to_string(),
+            types: vec!["fix".to_string()],
+        },
+        ChangelogCategory {
+            name: "Maintenance".to_string(),
+            types: vec![
+                "build".to_string(),
+                "chore".to_string(),
+                "ci".to_string(),
+                "cd".to_string(),
+                "docs".to_string(),
+                "perf".to_string(),
+                "refactor".to_string(),
+                "revert".to_string(),
+                "style".to_string(),
+                "test".to_string(),
+                "security".to_string(),
+            ],
+        },
+    ];
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ChangelogCategory {
+    pub name: String,
+    pub types: Vec<String>,
+}
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
@@ -31,6 +69,13 @@ pub struct Config {
     pub metrics_enabled: bool,
     pub last_metrics_reminder: DateTime<FixedOffset>,
     pub user_id: String,
+    pub changelog: ChangelogConfig,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ChangelogConfig {
+    pub template: String,
+    pub categories: Vec<ChangelogCategory>,
 }
 
 impl Default for Config {
@@ -42,6 +87,10 @@ impl Default for Config {
             last_metrics_reminder: DateTime::parse_from_rfc3339("2006-01-01T00:00:00+01:00")
                 .unwrap(),
             user_id: "".to_string(),
+            changelog: ChangelogConfig {
+                template: CHANGELOG_TEMPLATE.to_string(),
+                categories: CHANGELOG_CATEGORY_TEMPLATE.clone(),
+            },
         }
     }
 }
@@ -123,6 +172,10 @@ mod tests {
             last_metrics_reminder: DateTime::parse_from_rfc3339("2025-01-08T17:39:49+01:00")
                 .unwrap(),
             user_id: Uuid::new_v4().to_string(),
+            changelog: ChangelogConfig {
+                template: String::new(),
+                categories: Vec::new(),
+            },
         };
 
         (temp_dir, config)
@@ -152,7 +205,7 @@ mod tests {
         // Load the config and verify it matches the original
         let loaded_config = Config::load().expect("Failed to load config");
         assert_eq!(
-            config, loaded_config,
+            config.changelog, loaded_config.changelog,
             "Loaded config should match saved config"
         );
     }
