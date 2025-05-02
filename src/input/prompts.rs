@@ -1,4 +1,6 @@
-use super::validation::{auto_correct_scope, validate_scope, validate_short_message, validate_section};
+use super::validation::{
+    auto_correct_scope, validate_scope, validate_section, validate_short_message,
+};
 use crate::config::{COMMIT_TYPES, MAX_SHORT_DESCRIPTION_LENGTH};
 use crate::error::CliError;
 use inquire::{Confirm, Select, Text};
@@ -21,10 +23,13 @@ pub fn confirm_breaking_change() -> Result<bool, CliError> {
 }
 
 pub fn ask_want_create_new_branch(branch_name: &str) -> Result<bool, CliError> {
-    Confirm::new(&format!("Are you sure you want to create a new branch {}?", branch_name))
-        .with_default(false)
-        .prompt()
-        .map_err(|e| CliError::InputError(e.to_string()))
+    Confirm::new(&format!(
+        "Are you sure you want to create a new branch {}?",
+        branch_name
+    ))
+    .with_default(false)
+    .prompt()
+    .map_err(|e| CliError::InputError(e.to_string()))
 }
 
 pub fn input_ticket() -> Result<String, CliError> {
@@ -83,7 +88,7 @@ pub fn input_scope() -> Result<String, CliError> {
     if scope.is_empty() {
         Ok(scope)
     } else {
-        validate_scope_input(&scope)
+        validate_section(&scope).map_err(CliError::InputError)
     }
 }
 
@@ -129,10 +134,28 @@ pub fn input_short_message() -> Result<String, CliError> {
             .prompt();
 
         match msg {
-            Ok(valid_msg) => return Ok(valid_msg),
+            Ok(valid_msg) => {
+                if valid_msg.trim().is_empty() {
+                    // Empty input, re-prompt
+                    println!("Short description cannot be empty.");
+                    continue;
+                } else {
+                    return Ok(valid_msg);
+                }
+            }
+            Err(inquire::error::InquireError::OperationCanceled)
+            | Err(inquire::error::InquireError::OperationInterrupted) => {
+                // User cancelled the prompt, stop execution and return an error
+                return Err(CliError::InputError(
+                    "Operation cancelled by user".to_string(),
+                ));
+            }
             Err(_) => {
-                // If user cancels or error occurs, re-prompt.
-                println!("Please enter a valid short description (min 5, max {} chars).", MAX_SHORT_DESCRIPTION_LENGTH);
+                // Any other error, re-prompt
+                println!(
+                    "Please enter a valid short description (min 5, max {} chars).",
+                    MAX_SHORT_DESCRIPTION_LENGTH
+                );
                 continue;
             }
         }
