@@ -1,4 +1,4 @@
-use super::validation::{auto_correct_scope, validate_scope, validate_short_message};
+use super::validation::{auto_correct_scope, validate_scope, validate_short_message, validate_section};
 use crate::config::{COMMIT_TYPES, MAX_SHORT_DESCRIPTION_LENGTH};
 use crate::error::CliError;
 use inquire::{Confirm, Select, Text};
@@ -18,6 +18,37 @@ pub fn confirm_breaking_change() -> Result<bool, CliError> {
         .with_default(false)
         .prompt()
         .map_err(|e| CliError::InputError(e.to_string()))
+}
+
+pub fn ask_want_create_new_branch(branch_name: &str) -> Result<bool, CliError> {
+    Confirm::new(&format!("Are you sure you want to create a new branch {}?", branch_name))
+        .with_default(false)
+        .prompt()
+        .map_err(|e| CliError::InputError(e.to_string()))
+}
+
+pub fn input_ticket() -> Result<String, CliError> {
+    let ticket = Text::new("Enter the ticket identifier (optional):")
+        .with_help_message("Press Enter to skip")
+        .prompt()
+        .map_err(|e| CliError::InputError(e.to_string()))?;
+
+    if ticket.is_empty() {
+        Ok(ticket)
+    } else {
+        validate_section(&ticket).map_err(CliError::InputError)
+    }
+}
+
+pub fn input_subject() -> Result<String, CliError> {
+    let subject = Text::new("Enter the subject")
+        .prompt()
+        .map_err(|e| CliError::InputError(e.to_string()))?;
+    if subject.is_empty() {
+        input_subject()
+    } else {
+        validate_section(&subject).map_err(CliError::InputError)
+    }
 }
 
 pub fn validate_scope_input(scope: &str) -> Result<String, CliError> {
@@ -57,25 +88,55 @@ pub fn input_scope() -> Result<String, CliError> {
 }
 
 pub fn input_short_message() -> Result<String, CliError> {
-    let validator = move |input: &str| {
-        let remaining = MAX_SHORT_DESCRIPTION_LENGTH - input.len();
-        match validate_short_message(input) {
-            Ok(_) => Ok(inquire::validator::Validation::Valid),
-            Err(msg) => Ok(inquire::validator::Validation::Invalid(
-                inquire::validator::ErrorMessage::Custom(format!(
-                    "{} ({} chars remaining)",
-                    msg, remaining
+    loop {
+        let validator = |input: &str| {
+            let len = input.len();
+            let remaining = MAX_SHORT_DESCRIPTION_LENGTH.saturating_sub(len);
+            if len < 5 {
+                return Ok(inquire::validator::Validation::Invalid(
+                    inquire::validator::ErrorMessage::Custom(format!(
+                        "Description must be at least 5 characters ({} more needed)",
+                        5 - len
+                    )),
+                ));
+            }
+            if len > MAX_SHORT_DESCRIPTION_LENGTH {
+                return Ok(inquire::validator::Validation::Invalid(
+                    inquire::validator::ErrorMessage::Custom(format!(
+                        "Description must be at most {} characters ({} over)",
+                        MAX_SHORT_DESCRIPTION_LENGTH,
+                        len - MAX_SHORT_DESCRIPTION_LENGTH
+                    )),
+                ));
+            }
+            match validate_short_message(input) {
+                Ok(_) => Ok(inquire::validator::Validation::Valid),
+                Err(msg) => Ok(inquire::validator::Validation::Invalid(
+                    inquire::validator::ErrorMessage::Custom(format!(
+                        "{} ({} chars remaining)",
+                        msg, remaining
+                    )),
                 )),
-            )),
-        }
-    };
+            }
+        };
 
-    let msg = Text::new("Enter a short description:")
-        .with_help_message(&format!("Max {} characters", MAX_SHORT_DESCRIPTION_LENGTH))
-        .with_validator(validator)
-        .prompt()
-        .map_err(|e| CliError::InputError(e.to_string()))?;
-    Ok(msg)
+        let msg = Text::new("Enter a short description:")
+            .with_help_message(&format!(
+                "Min 5, Max {} characters",
+                MAX_SHORT_DESCRIPTION_LENGTH
+            ))
+            .with_validator(validator)
+            .prompt();
+
+        match msg {
+            Ok(valid_msg) => return Ok(valid_msg),
+            Err(_) => {
+                // If user cancels or error occurs, re-prompt.
+                println!("Please enter a valid short description (min 5, max {} chars).", MAX_SHORT_DESCRIPTION_LENGTH);
+                continue;
+            }
+        }
+    }
 }
 
 pub fn input_long_message() -> Result<String, CliError> {
