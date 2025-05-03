@@ -1,5 +1,6 @@
+include!(concat!(env!("OUT_DIR"), "/posthog_api_key.rs"));
+
 use std::collections::HashMap;
-use std::env;
 use std::env::consts::{ARCH, OS};
 use crate::config::Config;
 use once_cell::sync::Lazy;
@@ -29,8 +30,7 @@ impl From<reqwest::StatusCode> for TelemetryError {
 }
 
 pub async fn publish_event(event: &str, properties: HashMap<&str, Value>) -> Result<(), TelemetryError> {
-    let api_key = env::var("POSTHOG_API_KEY").unwrap_or_default();
-    if api_key.is_empty() {
+    if POSTHOG_API_KEY.is_empty() || POSTHOG_API_KEY == "undefined" {
         debug!("POSTHOG_API_KEY is not set");
         return Ok(());
     }
@@ -48,7 +48,7 @@ pub async fn publish_event(event: &str, properties: HashMap<&str, Value>) -> Res
     props.insert("distinct_id", Value::String(config.user_id.clone()));
 
     let payload = json!({
-        "api_key": api_key,
+        "api_key": POSTHOG_API_KEY,
         "event": event,
         "properties": props,
         "timestamp": Utc::now().to_rfc3339(),
