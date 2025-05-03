@@ -15,12 +15,15 @@ use log::{debug, info};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
+use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
 pub struct Config {
     pub last_update_check: DateTime<FixedOffset>,
     pub metrics_enabled: bool,
     pub last_metrics_reminder: DateTime<FixedOffset>,
+    pub user_id: String,
 }
 
 impl Default for Config {
@@ -31,6 +34,7 @@ impl Default for Config {
             metrics_enabled: true,
             last_metrics_reminder: DateTime::parse_from_rfc3339("2006-01-01T00:00:00+01:00")
                 .unwrap(),
+            user_id: Uuid::new_v4().to_string(),
         }
     }
 }
@@ -99,6 +103,7 @@ mod tests {
             metrics_enabled: true,
             last_metrics_reminder: DateTime::parse_from_rfc3339("2025-01-08T17:39:49+01:00")
                 .unwrap(),
+            user_id: Uuid::new_v4().to_string(),
         };
 
         (temp_dir, config)

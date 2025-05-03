@@ -8,6 +8,7 @@ mod input;
 mod linter;
 mod logger;
 mod release;
+mod telemetry;
 mod update;
 mod version;
 

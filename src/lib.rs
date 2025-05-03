@@ -6,5 +6,6 @@ pub mod input;
 pub mod linter;
 pub mod logger;
 pub mod release;
+pub mod telemetry;
 pub mod update;
 pub mod version;
