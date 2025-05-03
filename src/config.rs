@@ -1,26 +1,36 @@
 pub const COMMIT_TYPES: &[&str] = &[
     "feat", "fix", "build", "chore", "ci", "cd", "docs", "perf", "refactor", "revert", "style",
-    "test", "security",
+    "test", "security", "config",
+];
+
+pub const BRANCH_TYPES: &[&str] = &[
+    "feat", "fix", "refactor", "test", "docs", "perf", "security", "hotfix", "release", "spike",
+    "tooling",
 ];
 
 pub const MAX_SHORT_DESCRIPTION_LENGTH: usize = 150;
+pub const MAX_TICKET_NAME_LENGTH: usize = 10;
+pub const MAX_SCOPE_NAME_LENGTH: usize = 15;
 
 pub const MAJOR_REGEX: &str = r"(?im)^(breaking change:|feat(?:\s*\([^)]*\))?!:)";
 pub const MINOR_REGEX: &str = r"(?im)^feat(?:\s*\([^)]*\))?:";
-pub const PATCH_REGEX: &str = r"(?im)^(fix|docs|style|refactor|perf|test|chore|ci|cd|build|revert|security)(?:\s*\([^)]*\))?:";
+pub const PATCH_REGEX: &str = r"(?im)^(fix|docs|style|refactor|perf|test|chore|ci|cd|build|revert|security|config)(?:\s*\([^)]*\))?:";
 
 use anyhow::Result;
 use chrono::{DateTime, FixedOffset};
-use log::{debug, info};
+use log::debug;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
+use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
 pub struct Config {
     pub last_update_check: DateTime<FixedOffset>,
     pub metrics_enabled: bool,
     pub last_metrics_reminder: DateTime<FixedOffset>,
+    pub user_id: String,
 }
 
 impl Default for Config {
@@ -31,6 +41,7 @@ impl Default for Config {
             metrics_enabled: true,
             last_metrics_reminder: DateTime::parse_from_rfc3339("2006-01-01T00:00:00+01:00")
                 .unwrap(),
+            user_id: "".to_string(),
         }
     }
 }
@@ -41,20 +52,32 @@ impl Config {
         debug!("Loading configuration from {:?}", config_path);
 
         if !config_path.exists() {
-            info!("No configuration file found, using defaults");
+            debug!("No configuration file found, using defaults");
             return Ok(Self::default());
         }
 
         let config_str = fs::read_to_string(&config_path)?;
         debug!("Read configuration content: {}", config_str);
-        let config: Self = toml::from_str(&config_str)?;
+        // Load config with possible missing fields (serde default fills them)
+        let mut config: Self = toml::from_str(&config_str)?;
+        // If any field is still default (i.e., was missing in the file), re-save
+        let mut needs_save = false;
+        if config.user_id.is_empty() {
+            debug!("User ID is missing, generating new UUID");
+            config.user_id = Uuid::new_v4().to_string();
+            needs_save = true;
+        }
+        if needs_save {
+            debug!("Config missing new fields, saving updated config to disk");
+            let _ = config.save();
+        }
         Ok(config)
     }
 
     pub fn save(&self) -> Result<()> {
         let config_path = Self::get_config_path()?;
-        info!("Saving configuration");
-        info!("Configuration path: {:?}", config_path);
+        debug!("Saving configuration");
+        debug!("Configuration path: {:?}", config_path);
         debug!("Saving configuration to {:?}", config_path);
 
         if let Some(parent) = config_path.parent() {
@@ -65,7 +88,7 @@ impl Config {
         let config_str = toml::to_string(self)?;
         debug!("Writing configuration content: {}", config_str);
         fs::write(config_path, config_str)?;
-        info!("Configuration saved successfully");
+        debug!("Configuration saved successfully");
         Ok(())
     }
 
@@ -99,6 +122,7 @@ mod tests {
             metrics_enabled: true,
             last_metrics_reminder: DateTime::parse_from_rfc3339("2025-01-08T17:39:49+01:00")
                 .unwrap(),
+            user_id: Uuid::new_v4().to_string(),
         };
 
         (temp_dir, config)

@@ -12,6 +12,27 @@ pub fn validate_short_message(input: &str) -> Result<(), String> {
     }
 }
 
+pub fn validate_section(text: &str) -> Result<String, String> {
+    if text.is_empty() {
+        Ok(text.to_string())
+    } else {
+        // If text contain only numbers, it is valid
+        // If text contain only letters, it is valid
+        // If text contain both letters and numbers, it is valid
+        // If text contain special characters, it is invalid
+        // If text contain ' ' or '-' replace with '_'
+        let corrected = text.replace([' ', '-'], "_");
+        if corrected.chars().all(|c| c.is_alphanumeric() || c == '_') {
+            Ok(corrected)
+        } else {
+            Err(format!(
+                "Section must be empty or valid. Suggested correction: {}",
+                corrected
+            ))
+        }
+    }
+}
+
 pub fn suggest_commit_type(input: &str) -> Option<&'static str> {
     let input = input.trim().to_lowercase();
 

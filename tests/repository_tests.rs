@@ -190,7 +190,7 @@ fn test_no_staged_changes() -> Result<(), CliError> {
 
 #[test]
 fn test_unstaged_changes_only() -> Result<(), CliError> {
-    let (temp_dir, repo) = setup_test_repo();
+    let (temp_dir, _repo) = setup_test_repo();
 
     // Create a test file
     let test_file = temp_dir.path().join("test.txt");

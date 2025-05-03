@@ -1,15 +1,19 @@
+use serde_json::Value;
+use std::collections::HashMap;
+
 use crate::cli::Command;
 use crate::error::CliError;
 use crate::git;
 use crate::input;
 use crate::input::validation::{auto_correct_scope, suggest_commit_type};
+use crate::telemetry;
 use log::{debug, info};
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt, Default)]
 pub struct CommitCommand {
-    #[structopt(long, help = "Type of commit (e.g., feat, fix, docs)")]
-    type_: Option<String>,
+    #[structopt(long = "type", help = "Type of commit (e.g., feat, fix, docs)")]
+    commit_type: Option<String>,
 
     #[structopt(long, help = "Scope of the commit")]
     scope: Option<String>,
@@ -39,7 +43,7 @@ impl Command for CommitCommand {
         // In non-interactive mode (from the command root), all required fields must be provided
         if non_interactive {
             debug!("Running in non-interactive mode");
-            if self.type_.is_none() || self.message.is_none() {
+            if self.commit_type.is_none() || self.message.is_none() {
                 return Err(CliError::InputError(
                     "In non-interactive mode, --type and --message are required".to_string(),
                 ));
@@ -47,23 +51,23 @@ impl Command for CommitCommand {
         }
 
         // Handle commit type with auto-correction
-        let commit_type = if let Some(type_) = &self.type_ {
-            if let Some(suggested) = suggest_commit_type(type_) {
-                if suggested != type_ {
+        let commit_type = if let Some(commit_type) = &self.commit_type {
+            if let Some(suggested) = suggest_commit_type(commit_type) {
+                if suggested != commit_type {
                     info!(
                         "Auto-correcting commit type from '{}' to '{}'",
-                        type_, suggested
+                        commit_type, suggested
                     );
                     debug!(
                         "Auto-corrected commit type from '{}' to '{}'",
-                        type_, suggested
+                        commit_type, suggested
                     );
                 }
                 suggested.to_string()
             } else {
                 return Err(CliError::InputError(format!(
                     "Invalid commit type '{}'. Valid types are: {}",
-                    type_,
+                    commit_type,
                     crate::config::COMMIT_TYPES.join(", ")
                 )));
             }
@@ -125,12 +129,37 @@ impl Command for CommitCommand {
             &long_message,
         );
 
-        // Print the commit message
-        // println!("{}", full_message);
         debug!("Formatted commit message: {}", full_message);
-
         git::commit_changes(&full_message, self.amend)?;
-
+        // fire off telemetry without making this function async
+        if let Err(e) =
+            tokio::runtime::Runtime::new()
+                .unwrap()
+                .block_on(telemetry::posthog::publish_event(
+                    "commit_created",
+                    HashMap::from([
+                        ("commit_type", Value::from(commit_type.as_str())),
+                        (
+                            "is_breaking_change",
+                            Value::from(breaking_change.to_string()),
+                        ),
+                        ("as_scope", Value::from((!scope.is_empty()).to_string())),
+                        ("len_scope", Value::from(scope.len())),
+                        (
+                            "as_short_message",
+                            Value::from((!short_message.is_empty()).to_string()),
+                        ),
+                        ("len_short_message", Value::from(short_message.len())),
+                        (
+                            "as_long_message",
+                            Value::from((!long_message.is_empty()).to_string()),
+                        ),
+                        ("len_long_message", Value::from(long_message.len())),
+                    ]),
+                ))
+        {
+            debug!("Telemetry error: {:?}", e);
+        }
         info!("Changes committed successfully! 🎉");
         Ok(())
     }

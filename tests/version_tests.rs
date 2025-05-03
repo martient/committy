@@ -406,7 +406,7 @@ version = "1.0.0"
     ])
     .expect("Failed to create options");
 
-    let tag_generator = TagGenerator::new(options, true);
+    let mut tag_generator = TagGenerator::new(options, true);
 
     // Run the tag generator
     tag_generator.run().expect("Failed to run tag generator");
