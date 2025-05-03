@@ -1,12 +1,11 @@
 use anyhow::Result;
 use chrono::{DateTime, FixedOffset};
-use log::{debug, info};
 use lazy_static::lazy_static;
+use log::debug;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use uuid::Uuid;
-
 
 pub const COMMIT_TYPES: &[&str] = &[
     "feat", "fix", "build", "chore", "ci", "cd", "docs", "perf", "refactor", "revert", "style",
