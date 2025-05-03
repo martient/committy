@@ -8,3 +8,4 @@ pub mod logger;
 pub mod release;
 pub mod update;
 pub mod version;
+pub mod telemetry;

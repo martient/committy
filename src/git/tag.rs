@@ -73,6 +73,9 @@ pub struct TagGenerator {
     tag_message: String,
     not_publish: bool,
     bump_config_files: bool,
+    pub current_tag: String,
+    pub new_tag: String,
+    pub is_pre_release: bool,
 }
 
 impl TagGenerator {
@@ -95,10 +98,13 @@ impl TagGenerator {
             tag_message: options.tag_message.unwrap_or_default(),
             not_publish: options.not_publish,
             bump_config_files: allow_bump_config_files,
+            current_tag: String::new(),
+            new_tag: String::new(),
+            is_pre_release: false,
         }
     }
 
-    pub fn run(&self) -> Result<(), CliError> {
+    pub fn run(&mut self) -> Result<(), CliError> {
         info!("🚀 Starting tag generation process");
         let repo = self.open_repository()?;
         let current_branch = self.get_current_branch(&repo)?;
@@ -115,6 +121,9 @@ impl TagGenerator {
         );
         debug!("Current branch: {}", current_branch);
         debug!("Is pre-release: {}", pre_release);
+
+        self.current_tag = current_branch.clone();
+        self.is_pre_release = pre_release.clone();
 
         info!("🔄 Fetching tags from remote");
         self.fetch_tags(&repo)?;
@@ -133,25 +142,25 @@ impl TagGenerator {
             return Ok(());
         }
 
-        let new_tag = self.calculate_new_tag(&repo, &tag, &pre_tag, pre_release)?;
-        info!("🆕 Calculated new tag: {}", new_tag);
+        self.new_tag = self.calculate_new_tag(&repo, &tag, &pre_tag, pre_release)?;
+        info!("🆕 Calculated new tag: {}", self.new_tag);
 
         if self.dry_run {
-            info!("🧪 Dry run: New tag would be {}", new_tag);
+            info!("🧪 Dry run: New tag would be {}", self.new_tag);
             return Ok(());
         }
 
         // Update version files and commit changes
         if self.bump_config_files {
-            let updated_files = self.update_versions(&new_tag)?;
+            let updated_files = self.update_versions(&self.new_tag)?;
             if !updated_files.is_empty() {
                 info!("📝 Updated version in files: {}", updated_files.join(", "));
-                self.commit_version_changes(&repo, &new_tag, &updated_files)?;
+                self.commit_version_changes(&repo, &self.new_tag, &updated_files)?;
                 info!("✅ Committed version changes");
             }
         }
 
-        self.create_and_push_tag(&repo, &new_tag)?;
+        self.create_and_push_tag(&repo, &self.new_tag)?;
         Ok(())
     }
 

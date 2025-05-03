@@ -1,9 +1,14 @@
+use std::collections::HashMap;
+
 use crate::cli::Command;
 use crate::error::CliError;
+use log::debug;
+use serde_json::Value;
 use structopt::StructOpt;
 use crate::git;
 use log::info;
 use crate::input;
+use crate::telemetry;
 
 #[derive(Debug, StructOpt, Default)]
 pub struct BranchCommand {
@@ -21,10 +26,6 @@ impl Command for BranchCommand {
     fn execute(&self, non_interactive: bool) -> Result<(), CliError> {
         git::validate_git_config()?;
 
-        if git::has_staged_changes()? {
-            return Err(CliError::StagedChanges);
-        }
-
         if let Some(name) = &self.name {
             git::create_branch(name, self.force)?;
             println!("Branch {} created successfully!", name);
@@ -35,14 +36,14 @@ impl Command for BranchCommand {
                 ));
             }
 
-            let type_ = input::select_commit_type()?;
+            let branch_type = input::select_commit_type()?;
             let ticket = input::input_ticket()?;
             let subject = input::input_subject()?;
 
             let branch_name = if ticket.is_empty() {
-                format!("{}-{}", type_, subject)
+                format!("{}-{}", branch_type, subject)
             } else {
-                format!("{}-{}-{}", type_, ticket, subject)
+                format!("{}-{}-{}", branch_type, ticket, subject)
             };
 
             let validate = if !self.validate {
@@ -58,6 +59,20 @@ impl Command for BranchCommand {
             println!("Branch {} created successfully!", branch_name);
             git::checkout_branch(&branch_name)?;
             println!("Switched to branch {}", branch_name);
+            if let Err(e) = tokio::runtime::Runtime::new().unwrap().block_on(
+                telemetry::posthog::publish_event(
+                    "branch_created",
+                    HashMap::from([
+                        ("branch_type",      Value::from(branch_type.as_str())),
+                        ("as_ticket",         Value::from((!ticket.is_empty()).to_string())),
+                        ("len_ticket",        Value::from(ticket.len())),
+                        ("as_subject", Value::from((!subject.is_empty()).to_string())),
+                        ("len_subject",Value::from(subject.len())),
+                    ]),
+                )
+            ) {
+                debug!("Telemetry error: {:?}", e);
+            }
         }
 
         Ok(())

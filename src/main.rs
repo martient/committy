@@ -10,6 +10,7 @@ mod logger;
 mod release;
 mod update;
 mod version;
+mod telemetry;
 
 use anyhow::Result;
 use env_logger::{Builder, Env};
