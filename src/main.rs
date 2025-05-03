@@ -8,9 +8,9 @@ mod input;
 mod linter;
 mod logger;
 mod release;
+mod telemetry;
 mod update;
 mod version;
-mod telemetry;
 
 use anyhow::Result;
 use env_logger::{Builder, Env};

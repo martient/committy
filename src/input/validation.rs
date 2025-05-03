@@ -21,11 +21,14 @@ pub fn validate_section(text: &str) -> Result<String, String> {
         // If text contain both letters and numbers, it is valid
         // If text contain special characters, it is invalid
         // If text contain ' ' or '-' replace with '_'
-        let corrected = text.replace(' ', "_").replace('-', "_");
+        let corrected = text.replace([' ', '-'], "_");
         if corrected.chars().all(|c| c.is_alphanumeric() || c == '_') {
             Ok(corrected)
         } else {
-            Err(format!("Section must be empty or valid. Suggested correction: {}", corrected))
+            Err(format!(
+                "Section must be empty or valid. Suggested correction: {}",
+                corrected
+            ))
         }
     }
 }

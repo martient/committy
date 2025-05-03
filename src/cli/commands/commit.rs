@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use serde_json::Value;
+use std::collections::HashMap;
 
 use crate::cli::Command;
 use crate::error::CliError;
@@ -132,21 +132,32 @@ impl Command for CommitCommand {
         debug!("Formatted commit message: {}", full_message);
         git::commit_changes(&full_message, self.amend)?;
         // fire off telemetry without making this function async
-        if let Err(e) = tokio::runtime::Runtime::new().unwrap().block_on(
-            telemetry::posthog::publish_event(
-                "commit_created",
-                HashMap::from([
-                    ("commit_type",      Value::from(commit_type.as_str())),
-                    ("is_breaking_change", Value::from(breaking_change.to_string())),
-                    ("as_scope",         Value::from((!scope.is_empty()).to_string())),
-                    ("len_scope",        Value::from(scope.len())),
-                    ("as_short_message", Value::from((!short_message.is_empty()).to_string())),
-                    ("len_short_message",Value::from(short_message.len())),
-                    ("as_long_message",  Value::from((!long_message.is_empty()).to_string())),
-                    ("len_long_message", Value::from(long_message.len())),
-                ]),
-            )
-        ) {
+        if let Err(e) =
+            tokio::runtime::Runtime::new()
+                .unwrap()
+                .block_on(telemetry::posthog::publish_event(
+                    "commit_created",
+                    HashMap::from([
+                        ("commit_type", Value::from(commit_type.as_str())),
+                        (
+                            "is_breaking_change",
+                            Value::from(breaking_change.to_string()),
+                        ),
+                        ("as_scope", Value::from((!scope.is_empty()).to_string())),
+                        ("len_scope", Value::from(scope.len())),
+                        (
+                            "as_short_message",
+                            Value::from((!short_message.is_empty()).to_string()),
+                        ),
+                        ("len_short_message", Value::from(short_message.len())),
+                        (
+                            "as_long_message",
+                            Value::from((!long_message.is_empty()).to_string()),
+                        ),
+                        ("len_long_message", Value::from(long_message.len())),
+                    ]),
+                ))
+        {
             debug!("Telemetry error: {:?}", e);
         }
         info!("Changes committed successfully! 🎉");

@@ -16,14 +16,16 @@ pub fn checkout_branch(name: &str) -> Result<(), CliError> {
     let mut checkout_builder = CheckoutBuilder::default();
 
     // Find the branch reference
-    let branch = repo.find_branch(name, BranchType::Local)
+    let branch = repo
+        .find_branch(name, BranchType::Local)
         .map_err(CliError::from)?;
-    let branch_ref = branch.get().name()
+    let branch_ref = branch
+        .get()
+        .name()
         .ok_or_else(|| CliError::from(GitError::from_str("Invalid branch ref name")))?;
 
     // Set HEAD to the branch
-    repo.set_head(branch_ref)
-        .map_err(CliError::from)?;
+    repo.set_head(branch_ref).map_err(CliError::from)?;
 
     // Checkout working tree
     repo.checkout_head(Some(&mut checkout_builder))

@@ -123,7 +123,7 @@ impl TagGenerator {
         debug!("Is pre-release: {}", pre_release);
 
         self.current_tag = current_branch.clone();
-        self.is_pre_release = pre_release.clone();
+        self.is_pre_release = pre_release;
 
         info!("🔄 Fetching tags from remote");
         self.fetch_tags(&repo)?;

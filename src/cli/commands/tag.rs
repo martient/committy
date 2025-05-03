@@ -7,8 +7,8 @@ use crate::input;
 use crate::telemetry;
 use log::debug;
 use log::info;
-use structopt::StructOpt;
 use serde_json::Value;
+use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
 pub struct TagCommand {
@@ -59,17 +59,22 @@ impl Command for TagCommand {
             let mut version_manager =
                 git::TagGenerator::new(self.tag_options.clone(), self.bump_config_files);
             version_manager.run()?;
-            if let Err(e) = tokio::runtime::Runtime::new().unwrap().block_on(
-                telemetry::posthog::publish_event(
-                    "tag_created",
-                    HashMap::from([
-                        ("old_tag",      Value::from(version_manager.current_tag)),
-                        ("new_tag",      Value::from(version_manager.new_tag)),
-                        ("is_pre_release", Value::from(version_manager.is_pre_release)),
-                        ("allow_bump_files", Value::from(self.bump_config_files)),
-                    ]),
-                )
-            ) {
+            if let Err(e) =
+                tokio::runtime::Runtime::new()
+                    .unwrap()
+                    .block_on(telemetry::posthog::publish_event(
+                        "tag_created",
+                        HashMap::from([
+                            ("old_tag", Value::from(version_manager.current_tag)),
+                            ("new_tag", Value::from(version_manager.new_tag)),
+                            (
+                                "is_pre_release",
+                                Value::from(version_manager.is_pre_release),
+                            ),
+                            ("allow_bump_files", Value::from(self.bump_config_files)),
+                        ]),
+                    ))
+            {
                 debug!("Telemetry error: {:?}", e);
             }
         }

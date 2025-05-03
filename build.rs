@@ -17,7 +17,10 @@ fn main() {
     let dest_path = std::path::Path::new(&out_dir).join("posthog_api_key.rs");
     fs::write(
         &dest_path,
-        format!(r#"pub const POSTHOG_API_KEY: &str = "{}";"#, posthog_api_key),
+        format!(
+            r#"pub const POSTHOG_API_KEY: &str = "{}";"#,
+            posthog_api_key
+        ),
     )
     .unwrap();
 }
