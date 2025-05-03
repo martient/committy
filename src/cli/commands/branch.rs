@@ -36,7 +36,7 @@ impl Command for BranchCommand {
                 ));
             }
 
-            let branch_type = input::select_commit_type()?;
+            let branch_type = input::select_branch_type()?;
             let ticket = input::input_ticket()?;
             let subject = input::input_subject()?;
 

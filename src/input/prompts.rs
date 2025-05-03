@@ -1,7 +1,7 @@
 use super::validation::{
     auto_correct_scope, validate_scope, validate_section, validate_short_message,
 };
-use crate::config::{COMMIT_TYPES, MAX_SHORT_DESCRIPTION_LENGTH};
+use crate::config::{BRANCH_TYPES, COMMIT_TYPES, MAX_SHORT_DESCRIPTION_LENGTH};
 use crate::error::CliError;
 use inquire::{Confirm, Select, Text};
 use log::info;
@@ -13,6 +13,15 @@ pub fn select_commit_type() -> Result<String, CliError> {
         .map_err(|e| CliError::InputError(e.to_string()))?;
 
     Ok(commit_type.to_string())
+}
+
+pub fn select_branch_type() -> Result<String, CliError> {
+    let branch_type = Select::new("Select the type of branch:", BRANCH_TYPES.to_vec())
+        .with_help_message("Use arrow keys to navigate, Enter to select")
+        .prompt()
+        .map_err(|e| CliError::InputError(e.to_string()))?;
+
+    Ok(branch_type.to_string())
 }
 
 pub fn confirm_breaking_change() -> Result<bool, CliError> {
