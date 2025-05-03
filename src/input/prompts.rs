@@ -1,7 +1,10 @@
 use super::validation::{
     auto_correct_scope, validate_scope, validate_section, validate_short_message,
 };
-use crate::config::{BRANCH_TYPES, COMMIT_TYPES, MAX_SCOPE_NAME_LENGTH, MAX_SHORT_DESCRIPTION_LENGTH, MAX_TICKET_NAME_LENGTH};
+use crate::config::{
+    BRANCH_TYPES, COMMIT_TYPES, MAX_SCOPE_NAME_LENGTH, MAX_SHORT_DESCRIPTION_LENGTH,
+    MAX_TICKET_NAME_LENGTH,
+};
 use crate::error::CliError;
 use inquire::{Confirm, Select, Text};
 use log::info;
@@ -48,14 +51,18 @@ pub fn input_ticket() -> Result<String, CliError> {
             return Ok(inquire::validator::Validation::Invalid(
                 inquire::validator::ErrorMessage::Custom(format!(
                     "Ticket identifier must be at most {} characters ({} over)",
-                    MAX_TICKET_NAME_LENGTH, len - MAX_TICKET_NAME_LENGTH
+                    MAX_TICKET_NAME_LENGTH,
+                    len - MAX_TICKET_NAME_LENGTH
                 )),
             ));
         }
         Ok(inquire::validator::Validation::Valid)
     };
     let ticket = Text::new("Enter the ticket identifier (optional):")
-        .with_help_message(&format!("Press Enter to skip, max {} characters", MAX_TICKET_NAME_LENGTH))
+        .with_help_message(&format!(
+            "Press Enter to skip, max {} characters",
+            MAX_TICKET_NAME_LENGTH
+        ))
         .with_validator(validator)
         .prompt()
         .map_err(|e| CliError::InputError(e.to_string()))?;
@@ -108,14 +115,18 @@ pub fn input_scope() -> Result<String, CliError> {
             return Ok(inquire::validator::Validation::Invalid(
                 inquire::validator::ErrorMessage::Custom(format!(
                     "Scope must be at most {} characters ({} over)",
-                    MAX_SCOPE_NAME_LENGTH, len - MAX_SCOPE_NAME_LENGTH
+                    MAX_SCOPE_NAME_LENGTH,
+                    len - MAX_SCOPE_NAME_LENGTH
                 )),
             ));
         }
         Ok(inquire::validator::Validation::Valid)
     };
     let scope = Text::new("Enter the scope of the commit (optional):")
-        .with_help_message(&format!("Press Enter to skip, max {} characters", MAX_SCOPE_NAME_LENGTH))
+        .with_help_message(&format!(
+            "Press Enter to skip, max {} characters",
+            MAX_SCOPE_NAME_LENGTH
+        ))
         .with_validator(validator)
         .prompt()
         .map_err(|e| CliError::InputError(e.to_string()))?;
