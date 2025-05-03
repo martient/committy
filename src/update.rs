@@ -1,8 +1,13 @@
+use std::collections::HashMap;
+
 use anyhow::Result;
 use inquire::Confirm;
-use log::{info, warn};
+use log::{debug, info, warn};
 use self_update::update::Release;
 use semver::Version;
+use serde_json::Value;
+
+use crate::telemetry;
 
 const GITHUB_REPO_OWNER: &str = "martient";
 const GITHUB_REPO_NAME: &str = "committy";
@@ -133,6 +138,20 @@ impl Updater {
             info!("Update successful! New version: {}", status.version());
         } else {
             warn!("No update available");
+        }
+        if let Err(e) =
+            tokio::runtime::Runtime::new()
+                .unwrap()
+                .block_on(telemetry::posthog::publish_event(
+                    "update",
+                    HashMap::from([
+                        ("old_version", Value::from(self.current_version.to_string())),
+                        ("new_version", Value::from(version_tag)),
+                        ("is_pre_release", Value::from(self.include_prerelease)),
+                    ]),
+                ))
+        {
+            debug!("Telemetry error: {:?}", e);
         }
 
         Ok(())
