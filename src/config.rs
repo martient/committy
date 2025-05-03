@@ -9,6 +9,8 @@ pub const BRANCH_TYPES: &[&str] = &[
 ];
 
 pub const MAX_SHORT_DESCRIPTION_LENGTH: usize = 150;
+pub const MAX_TICKET_NAME_LENGTH: usize = 10;
+pub const MAX_SCOPE_NAME_LENGTH: usize = 15;
 
 pub const MAJOR_REGEX: &str = r"(?im)^(breaking change:|feat(?:\s*\([^)]*\))?!:)";
 pub const MINOR_REGEX: &str = r"(?im)^feat(?:\s*\([^)]*\))?:";
