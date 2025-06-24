@@ -74,6 +74,41 @@ fn test_tag_without_message() {
 }
 
 #[test]
+fn test_pre_release_continues_from_highest_version() {
+    let dir = setup_test_repo();
+    let repo = Repository::open(dir.path()).unwrap();
+    let signature = Signature::now("Test User", "test@example.com").unwrap();
+    // Tag v8.3.2 (regular)
+    repo.tag(
+        "v8.3.2",
+        &repo.head().unwrap().peel_to_commit().unwrap().as_object(),
+        &signature,
+        "Regular release",
+        false,
+    ).unwrap();
+    // Tag v10.0.0-beta.1 (pre-release)
+    repo.tag(
+        "v10.0.0-beta.1",
+        &repo.head().unwrap().peel_to_commit().unwrap().as_object(),
+        &signature,
+        "Pre-release",
+        false,
+    ).unwrap();
+
+    // Run the tag command in pre-release mode (should produce v10.0.0-beta.2)
+    let mut cmd = Command::cargo_bin("committy").unwrap();
+    cmd.current_dir(dir.path())
+        .arg("--non-interactive")
+        .arg("tag")
+        .arg("--prerelease")
+        .arg("--dry-run");
+    // Output should show the calculated new tag as v10.0.0-beta.2
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("v10.0.0-beta.2"));
+}
+
+#[test]
 fn test_tag_with_staged_changes() {
     let dir = setup_test_repo();
 

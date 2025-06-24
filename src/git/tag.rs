@@ -305,12 +305,24 @@ impl TagGenerator {
             "Calculating new tag. Current tag: {}, Pre-release tag: {}, Is pre-release: {}",
             tag, pre_tag, pre_release
         );
-        let log = self.get_commit_log(repo, tag)?;
+        use semver::Version as SemverVersion;
+        let (base_tag, base_is_pre) = if pre_release {
+            // Parse both tags
+            let reg_ver = SemverVersion::parse(tag.trim_start_matches('v')).unwrap_or_else(|_| SemverVersion::new(0,0,0));
+            let pre_ver = SemverVersion::parse(pre_tag.trim_start_matches('v').split('-').next().unwrap_or("")).unwrap_or_else(|_| SemverVersion::new(0,0,0));
+            // If pre_tag is a higher version, use it as base
+            if pre_ver > reg_ver {
+                (pre_tag, true)
+            } else {
+                (tag, false)
+            }
+        } else {
+            (tag, false)
+        };
+
+        let log = self.get_commit_log(repo, base_tag)?;
         let bump: &str = self.determine_bump(&log)?;
-
-        let mut new_version = Version::parse(tag.trim_start_matches('v'))
-            .map_err(|e| CliError::SemVerError(e.to_string()))?;
-
+        let mut new_version = SemverVersion::parse(base_tag.trim_start_matches('v').split('-').next().unwrap_or("")).map_err(|e| CliError::SemVerError(e.to_string()))?;
         self.apply_bump(&mut new_version, bump);
 
         let new_tag = if pre_release {
