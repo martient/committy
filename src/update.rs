@@ -116,18 +116,18 @@ impl Updater {
 
     pub fn update_to_version(&self, version_tag: &str) -> Result<()> {
         let version_tag = if !version_tag.starts_with('v') {
-            format!("v{}", version_tag)
+            format!("v{version_tag}")
         } else {
             version_tag.to_string()
         };
-        info!("Starting update process for version {}...", version_tag);
+        info!("Starting update process for version {version_tag}...");
         let status = self_update::backends::github::Update::configure()
             .repo_owner(GITHUB_REPO_OWNER)
             .repo_name(GITHUB_REPO_NAME)
             .bin_name("committy")
             .bin_path_in_archive("./committy")
             .target_version_tag(&version_tag)
-            .target(&format!("committy-{}.tar.gz", ASSET_SUFFIX))
+            .target(&format!("committy-{ASSET_SUFFIX}.tar.gz"))
             .show_download_progress(true)
             .current_version(&self.current_version.to_string())
             .no_confirm(true) // Disable built-in confirmation since we handle it ourselves
@@ -151,7 +151,7 @@ impl Updater {
                     ]),
                 ))
         {
-            debug!("Telemetry error: {:?}", e);
+            debug!("Telemetry error: {e:?}");
         }
 
         Ok(())

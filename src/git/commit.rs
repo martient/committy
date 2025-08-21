@@ -51,25 +51,15 @@ pub fn format_commit_message(
     short_message: &str,
     long_message: &str,
 ) -> String {
+    let bang = if breaking_change { "!" } else { "" };
     let mut full_message = if scope.is_empty() {
-        format!(
-            "{}{}: {}",
-            commit_type,
-            if breaking_change { "!" } else { "" },
-            short_message
-        )
+        format!("{commit_type}{bang}: {short_message}")
     } else {
-        format!(
-            "{}({}){}: {}",
-            commit_type,
-            scope,
-            if breaking_change { "!" } else { "" },
-            short_message
-        )
+        format!("{commit_type}({scope}){bang}: {short_message}")
     };
 
     if !long_message.is_empty() {
-        full_message = format!("{}\n\n{}", full_message, long_message);
+        full_message = format!("{full_message}\n\n{long_message}");
     }
 
     full_message

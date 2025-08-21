@@ -54,14 +54,8 @@ impl Command for CommitCommand {
         let commit_type = if let Some(commit_type) = &self.commit_type {
             if let Some(suggested) = suggest_commit_type(commit_type) {
                 if suggested != commit_type {
-                    info!(
-                        "Auto-correcting commit type from '{}' to '{}'",
-                        commit_type, suggested
-                    );
-                    debug!(
-                        "Auto-corrected commit type from '{}' to '{}'",
-                        commit_type, suggested
-                    );
+                    info!("Auto-correcting commit type from '{commit_type}' to '{suggested}'");
+                    debug!("Auto-corrected commit type from '{commit_type}' to '{suggested}'");
                 }
                 suggested.to_string()
             } else {
@@ -94,7 +88,7 @@ impl Command for CommitCommand {
                 // In non-interactive mode, apply corrections automatically
                 let corrected = auto_correct_scope(scope);
                 if corrected != *scope {
-                    info!("Auto-correcting scope from '{}' to '{}'", scope, corrected);
+                    info!("Auto-correcting scope from '{scope}' to '{corrected}'");
                 }
                 corrected
             }
@@ -129,7 +123,7 @@ impl Command for CommitCommand {
             &long_message,
         );
 
-        debug!("Formatted commit message: {}", full_message);
+        debug!("Formatted commit message: {full_message}");
         git::commit_changes(&full_message, self.amend)?;
         // fire off telemetry without making this function async
         if let Err(e) =
@@ -158,7 +152,7 @@ impl Command for CommitCommand {
                     ]),
                 ))
         {
-            debug!("Telemetry error: {:?}", e);
+            debug!("Telemetry error: {e:?}");
         }
         info!("Changes committed successfully! 🎉");
         Ok(())

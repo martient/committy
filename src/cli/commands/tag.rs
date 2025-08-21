@@ -27,6 +27,10 @@ pub struct TagCommand {
 
     #[structopt(flatten)]
     tag_options: git::TagGeneratorOptions,
+
+    /// Output format: text or json
+    #[structopt(long, default_value = "text", possible_values = &["text", "json"])]
+    output: String,
 }
 
 impl Command for TagCommand {
@@ -39,14 +43,34 @@ impl Command for TagCommand {
             let version_manager =
                 git::TagGenerator::new(self.tag_options.clone(), self.bump_config_files);
             version_manager.create_and_push_tag(&version_manager.open_repository()?, name)?;
-            println!("Tag {} created successfully!", name);
-        } else {
-            if non_interactive {
-                return Err(CliError::InputError(
-                    "Tag name is required in non-interactive mode".to_string(),
-                ));
+            if self.output == "json" {
+                let payload = serde_json::json!({
+                    "ok": true,
+                    "new_tag": name,
+                });
+                println!("{}", serde_json::to_string(&payload).unwrap());
+            } else {
+                println!("Tag {name} created successfully!");
             }
+        } else if non_interactive {
+            // In non-interactive mode, auto-calculate and act based on options
+            let mut version_manager =
+                git::TagGenerator::new(self.tag_options.clone(), self.bump_config_files);
+            version_manager.run()?;
 
+            // Print the calculated tag so callers/tests can consume it
+            if self.output == "json" {
+                let payload = serde_json::json!({
+                    "ok": true,
+                    "old_tag": version_manager.current_tag,
+                    "new_tag": version_manager.new_tag,
+                    "pre_release": version_manager.is_pre_release,
+                });
+                println!("{}", serde_json::to_string(&payload).unwrap());
+            } else {
+                println!("{}", version_manager.new_tag);
+            }
+        } else {
             let validate = if !self.validate {
                 input::ask_want_create_new_tag()?
             } else {
@@ -59,6 +83,15 @@ impl Command for TagCommand {
             let mut version_manager =
                 git::TagGenerator::new(self.tag_options.clone(), self.bump_config_files);
             version_manager.run()?;
+            if self.output == "json" {
+                let payload = serde_json::json!({
+                    "ok": true,
+                    "old_tag": version_manager.current_tag,
+                    "new_tag": version_manager.new_tag,
+                    "pre_release": version_manager.is_pre_release,
+                });
+                println!("{}", serde_json::to_string(&payload).unwrap());
+            }
             if let Err(e) =
                 tokio::runtime::Runtime::new()
                     .unwrap()
@@ -75,7 +108,7 @@ impl Command for TagCommand {
                         ]),
                     ))
             {
-                debug!("Telemetry error: {:?}", e);
+                debug!("Telemetry error: {e:?}");
             }
         }
 

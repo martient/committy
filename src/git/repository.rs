@@ -4,7 +4,7 @@ use std::env;
 
 pub fn discover_repository() -> Result<Repository, CliError> {
     let current_dir = env::current_dir()?;
-    log::debug!("Starting repository discovery from: {:?}", current_dir);
+    log::debug!("Starting repository discovery from: {current_dir:?}");
 
     match Repository::discover(&current_dir) {
         Ok(repo) => {
@@ -23,17 +23,13 @@ pub fn discover_repository() -> Result<Repository, CliError> {
             match Repository::open(&repo_path) {
                 Ok(new_repo) => Ok(new_repo),
                 Err(e) => {
-                    log::error!("Failed to open repository at {:?}: {}", repo_path, e);
+                    log::error!("Failed to open repository at {repo_path:?}: {e}");
                     Err(CliError::GitError(e))
                 }
             }
         }
         Err(e) => {
-            log::error!(
-                "Failed to discover repository from {:?}: {}",
-                current_dir,
-                e
-            );
+            log::error!("Failed to discover repository from {current_dir:?}: {e}");
             Err(CliError::GitError(git2::Error::from_str(
                 "Could not find Git repository in current directory or any parent directories",
             )))

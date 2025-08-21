@@ -57,6 +57,15 @@ pub struct TagGeneratorOptions {
 
     #[structopt(long, help = "Do not publish the new tag")]
     not_publish: bool,
+
+    #[structopt(long, help = "Fetch tags from remote before calculation")]
+    fetch: bool,
+
+    #[structopt(
+        long = "no-fetch",
+        help = "Do not fetch tags from remote before calculation"
+    )]
+    no_fetch: bool,
 }
 
 pub struct TagGenerator {
@@ -72,6 +81,7 @@ pub struct TagGenerator {
     force_without_change: bool,
     tag_message: String,
     not_publish: bool,
+    fetch: bool,
     bump_config_files: bool,
     pub current_tag: String,
     pub new_tag: String,
@@ -97,11 +107,23 @@ impl TagGenerator {
             force_without_change: options.force_without_change,
             tag_message: options.tag_message.unwrap_or_default(),
             not_publish: options.not_publish,
+            // default to fetching unless --no-fetch is explicitly passed; --fetch enforces true
+            fetch: if options.fetch {
+                true
+            } else if options.no_fetch {
+                false
+            } else {
+                true
+            },
             bump_config_files: allow_bump_config_files,
             current_tag: String::new(),
             new_tag: String::new(),
             is_pre_release: false,
         }
+    }
+
+    fn should_fetch(&self) -> bool {
+        self.fetch
     }
 
     pub fn run(&mut self) -> Result<(), CliError> {
@@ -114,28 +136,29 @@ impl TagGenerator {
             self.prerelease
         };
 
-        info!("📊 Current branch: {}", current_branch);
+        info!("📊 Current branch: {current_branch}");
         info!(
             "🏷️ Pre-release mode: {}",
             if pre_release { "Yes" } else { "No" }
         );
-        debug!("Current branch: {}", current_branch);
-        debug!("Is pre-release: {}", pre_release);
+        debug!("Current branch: {current_branch}");
+        debug!("Is pre-release: {pre_release}");
 
         self.current_tag = current_branch.clone();
         self.is_pre_release = pre_release;
 
-        info!("🔄 Fetching tags from remote");
-        self.fetch_tags(&repo)?;
+        if self.should_fetch() {
+            info!("🔄 Fetching tags from remote");
+            self.fetch_tags(&repo)?;
+        } else {
+            debug!("Skipping remote tag fetch (fetch flag not set)");
+        }
 
         let (tag, pre_tag) = self.get_latest_tags(&repo)?;
         let tag_commit = self.get_commit_for_tag(&repo, &tag)?;
         let current_commit = self.get_current_commit(&repo)?;
 
-        info!(
-            "📌 Latest tag: {}, Latest pre-release tag: {}",
-            tag, pre_tag
-        );
+        info!("📌 Latest tag: {tag}, Latest pre-release tag: {pre_tag}");
 
         if self.should_skip_tagging(tag_commit, current_commit) {
             info!("⏭️ No new commits since previous tag. Skipping...");
@@ -205,7 +228,7 @@ impl TagGenerator {
 
                 remote.fetch(&["refs/tags/*:refs/tags/*"], Some(&mut fetch_options), None)
                     .map_err(|e| {
-                        error!("Failed to fetch tags from remote: {}", e);
+                        error!("Failed to fetch tags from remote: {e}");
                         match e.code() {
                             git2::ErrorCode::Auth => {
                                 error!("Authentication error. Please ensure your credentials are set up correctly.");
@@ -255,14 +278,14 @@ impl TagGenerator {
             .cloned()
             .unwrap_or_else(|| self.initial_version.clone());
 
-        debug!("Latest regular tag: {}", tag);
-        debug!("Latest pre-release tag: {}", pre_tag);
+        debug!("Latest regular tag: {tag}");
+        debug!("Latest pre-release tag: {pre_tag}");
 
         Ok((tag, pre_tag))
     }
 
     fn compare_versions(&self, a: &str, b: &str) -> std::cmp::Ordering {
-        debug!("Comparing versions: {} and {}", a, b);
+        debug!("Comparing versions: {a} and {b}");
         if a.contains("none") || b.contains("none") {
             return a.cmp(b);
         }
@@ -302,14 +325,21 @@ impl TagGenerator {
         pre_release: bool,
     ) -> Result<String, CliError> {
         debug!(
-            "Calculating new tag. Current tag: {}, Pre-release tag: {}, Is pre-release: {}",
-            tag, pre_tag, pre_release
+            "Calculating new tag. Current tag: {tag}, Pre-release tag: {pre_tag}, Is pre-release: {pre_release}"
         );
         use semver::Version as SemverVersion;
-        let (base_tag, base_is_pre) = if pre_release {
+        let (base_tag, _base_is_pre) = if pre_release {
             // Parse both tags
-            let reg_ver = SemverVersion::parse(tag.trim_start_matches('v')).unwrap_or_else(|_| SemverVersion::new(0,0,0));
-            let pre_ver = SemverVersion::parse(pre_tag.trim_start_matches('v').split('-').next().unwrap_or("")).unwrap_or_else(|_| SemverVersion::new(0,0,0));
+            let reg_ver = SemverVersion::parse(tag.trim_start_matches('v'))
+                .unwrap_or_else(|_| SemverVersion::new(0, 0, 0));
+            let pre_ver = SemverVersion::parse(
+                pre_tag
+                    .trim_start_matches('v')
+                    .split('-')
+                    .next()
+                    .unwrap_or(""),
+            )
+            .unwrap_or_else(|_| SemverVersion::new(0, 0, 0));
             // If pre_tag is a higher version, use it as base
             if pre_ver > reg_ver {
                 (pre_tag, true)
@@ -322,7 +352,14 @@ impl TagGenerator {
 
         let log = self.get_commit_log(repo, base_tag)?;
         let bump: &str = self.determine_bump(&log)?;
-        let mut new_version = SemverVersion::parse(base_tag.trim_start_matches('v').split('-').next().unwrap_or("")).map_err(|e| CliError::SemVerError(e.to_string()))?;
+        let mut new_version = SemverVersion::parse(
+            base_tag
+                .trim_start_matches('v')
+                .split('-')
+                .next()
+                .unwrap_or(""),
+        )
+        .map_err(|e| CliError::SemVerError(e.to_string()))?;
         self.apply_bump(&mut new_version, bump);
 
         let new_tag = if pre_release {
@@ -332,7 +369,7 @@ impl TagGenerator {
         };
 
         Ok(if !self.not_with_v {
-            format!("v{}", new_tag)
+            format!("v{new_tag}")
         } else {
             new_tag
         })
@@ -340,12 +377,13 @@ impl TagGenerator {
 
     fn determine_bump(&self, log: &str) -> Result<&str, CliError> {
         debug!("Determining bump from commit log");
+        let cfg = config::Config::load().unwrap_or_default();
         let major_pattern =
-            Regex::new(config::MAJOR_REGEX).map_err(|e| CliError::RegexError(e.to_string()))?;
+            Regex::new(&cfg.major_regex).map_err(|e| CliError::RegexError(e.to_string()))?;
         let minor_pattern =
-            Regex::new(config::MINOR_REGEX).map_err(|e| CliError::RegexError(e.to_string()))?;
+            Regex::new(&cfg.minor_regex).map_err(|e| CliError::RegexError(e.to_string()))?;
         let patch_pattern =
-            Regex::new(config::PATCH_REGEX).map_err(|e| CliError::RegexError(e.to_string()))?;
+            Regex::new(&cfg.patch_regex).map_err(|e| CliError::RegexError(e.to_string()))?;
 
         if major_pattern.is_match(log) {
             Ok("major")
@@ -361,7 +399,7 @@ impl TagGenerator {
     }
 
     fn apply_bump(&self, version: &mut Version, bump: &str) {
-        debug!("Applying bump: {} to version: {}", bump, version);
+        debug!("Applying bump: {bump} to version: {version}");
         match bump {
             "major" => {
                 version.major += 1;
@@ -375,7 +413,7 @@ impl TagGenerator {
             "patch" => version.patch += 1,
             _ => {}
         }
-        debug!("New version after bump: {}", version);
+        debug!("New version after bump: {version}");
     }
 
     fn update_versions(&self, new_version: &str) -> Result<Vec<String>, CliError> {
@@ -412,11 +450,10 @@ impl TagGenerator {
 
     fn calculate_pre_release_tag(&self, new_version: &Version, pre_tag: &str) -> String {
         debug!(
-            "Calculating pre-release tag. New version: {}, Previous pre-tag: {}",
-            new_version, pre_tag
+            "Calculating pre-release tag. New version: {new_version}, Previous pre-tag: {pre_tag}"
         );
-        debug!("{}", &new_version.to_string());
-        debug!("{}", pre_tag);
+        debug!("{new_version}");
+        debug!("{pre_tag}");
 
         let version_string = new_version.to_string();
         let pre_tag_without_v = pre_tag.trim_start_matches('v');
@@ -435,7 +472,7 @@ impl TagGenerator {
     }
 
     fn get_commit_log(&self, repo: &Repository, tag: &str) -> Result<String, CliError> {
-        debug!("Getting commit log since tag: {}", tag);
+        debug!("Getting commit log since tag: {tag}");
         let tag_commit = self.get_commit_for_tag(repo, tag)?;
         let head_commit = self.get_current_commit(repo)?;
 
@@ -452,7 +489,8 @@ impl TagGenerator {
             .collect::<Vec<_>>()
             .join("\n");
 
-        debug!("Commit log length: {} characters", log.len());
+        let len = log.len();
+        debug!("Commit log length: {len} characters");
         Ok(log)
     }
 
@@ -479,7 +517,7 @@ impl TagGenerator {
         let tree = repo.find_tree(tree_id)?;
         let parent_commit = repo.head()?.peel_to_commit()?;
         let version_without_v = new_version.trim_start_matches('v');
-        let message = format!("chore: bump version to {}", version_without_v);
+        let message = format!("chore: bump version to {version_without_v}");
 
         repo.commit(
             Some("HEAD"),
@@ -512,21 +550,17 @@ impl TagGenerator {
                     push_options.remote_callbacks(callbacks);
 
                     let current_branch = self.get_current_branch(repo)?;
-                    let refspec = format!("refs/heads/{}", current_branch);
+                    let refspec = format!("refs/heads/{current_branch}");
 
                     match remote.push(&[&refspec], Some(&mut push_options)) {
                         Ok(_) => {
-                            debug!(
-                                "Successfully pushed commit to remote branch {}",
-                                current_branch
-                            );
+                            debug!("Successfully pushed commit to remote branch {current_branch}");
                             info!(
-                                "✅ Pushed version bump commit to remote branch {}",
-                                current_branch
+                                "✅ Pushed version bump commit to remote branch {current_branch}"
                             );
                         }
                         Err(e) => {
-                            error!("Failed to push commit to remote: {}", e);
+                            error!("Failed to push commit to remote: {e}");
                             if e.code() == git2::ErrorCode::Auth {
                                 error!(
                                     "Authentication error. Please ensure your SSH key is set up correctly."
@@ -548,7 +582,7 @@ impl TagGenerator {
     }
 
     pub fn create_and_push_tag(&self, repo: &Repository, new_tag: &str) -> Result<(), CliError> {
-        debug!("Creating and pushing new tag: {}", new_tag);
+        debug!("Creating and pushing new tag: {new_tag}");
         let head = repo.head()?.peel_to_commit()?;
         let signature = repo.signature()?;
 
@@ -581,11 +615,11 @@ impl TagGenerator {
                     let mut push_options = PushOptions::new();
                     push_options.remote_callbacks(callbacks);
 
-                    let refspec = format!("refs/tags/{}", new_tag);
+                    let refspec = format!("refs/tags/{new_tag}");
                     match remote.push(&[&refspec], Some(&mut push_options)) {
-                        Ok(_) => debug!("Successfully pushed tag {} to remote", new_tag),
+                        Ok(_) => debug!("Successfully pushed tag {new_tag} to remote"),
                         Err(e) => {
-                            error!("Failed to push tag {} to remote: {}", new_tag, e);
+                            error!("Failed to push tag {new_tag} to remote: {e}");
                             if e.code() == git2::ErrorCode::Auth {
                                 error!(
                                     "Authentication error. Please ensure your SSH key is set up correctly."

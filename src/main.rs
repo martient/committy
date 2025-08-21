@@ -14,6 +14,7 @@ mod version;
 
 use anyhow::Result;
 use env_logger::{Builder, Env};
+use log::LevelFilter;
 use sentry::ClientInitGuard;
 use structopt::StructOpt;
 
@@ -51,28 +52,73 @@ struct Opt {
 
     #[structopt(long = "metrics-toggle", help = "Toggle metrics collection on/off")]
     metrics_toggle: bool,
+
+    #[structopt(
+        short = "v",
+        long = "verbose",
+        parse(from_occurrences),
+        help = "Increase verbosity (-v, -vv)"
+    )]
+    verbose: u8,
+
+    #[structopt(short = "q", long = "quiet", help = "Reduce verbosity (errors only)")]
+    quiet: bool,
 }
 
 fn main() {
-    Builder::from_env(Env::default().default_filter_or("info")).init();
-
     // Load configuration
     let mut config = Config::load().unwrap_or_else(|_| {
         let default_config = Config::default();
         if let Err(e) = default_config.save() {
-            eprintln!("Failed to save default configuration: {}", e);
+            eprintln!("Failed to save default configuration: {e}");
         }
         default_config
     });
 
     if let Err(e) = run(&mut config) {
-        eprintln!("{}", e);
-        std::process::exit(1);
+        // Map specific errors to exit codes
+        if let Some(cli_err) = e.downcast_ref::<CliError>() {
+            match cli_err {
+                CliError::LintIssues(_) => {
+                    eprintln!("{e}");
+                    std::process::exit(3);
+                }
+                _ => {
+                    eprintln!("{e}");
+                    std::process::exit(1);
+                }
+            }
+        } else {
+            eprintln!("{e}");
+            std::process::exit(1);
+        }
     }
 }
 
 fn run(config: &mut Config) -> Result<()> {
     let opt = Opt::from_args();
+
+    // Initialize logger based on verbosity flags
+    let mut builder = Builder::from_env(Env::default().default_filter_or("info"));
+    let level = if opt.quiet {
+        LevelFilter::Error
+    } else {
+        match opt.verbose {
+            0 => LevelFilter::Info,
+            1 => LevelFilter::Debug,
+            _ => LevelFilter::Trace,
+        }
+    };
+    builder.filter_level(level).init();
+
+    // Unified non-interactive mode for CI/tests and CLI flag
+    let env_non_interactive = std::env::var("COMMITTY_NONINTERACTIVE")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+        || std::env::var("CI")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+    let non_interactive = opt.non_interactive || env_non_interactive;
 
     if opt.metrics_toggle {
         config.metrics_enabled = !config.metrics_enabled;
@@ -119,7 +165,7 @@ fn run(config: &mut Config) -> Result<()> {
         let mut updater = Updater::new(env!("CARGO_PKG_VERSION"))?;
         updater
             .with_prerelease(opt.pre_release)
-            .with_non_interactive(opt.non_interactive);
+            .with_non_interactive(non_interactive);
 
         if let Ok(Some(release)) = updater.check_update() {
             logger::info(&format!("New version {} is available!", release.version));
@@ -136,7 +182,7 @@ fn run(config: &mut Config) -> Result<()> {
     }
 
     // Check for updates when running any command
-    if !opt.non_interactive
+    if !non_interactive
         && !opt.check_update
         && !opt.update
         && current_time - config.last_update_check >= one_day
@@ -166,10 +212,10 @@ fn run(config: &mut Config) -> Result<()> {
     }
 
     let result = match opt.cmd {
-        Some(cmd) => cmd.execute(opt.non_interactive),
+        Some(cmd) => cmd.execute(non_interactive),
         None => {
             let cmd = CommitCommand::default();
-            cmd.execute(opt.non_interactive)
+            cmd.execute(non_interactive)
         }
     };
 
