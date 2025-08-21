@@ -196,11 +196,7 @@ mod tests {
 
         let linter = CommitLinter::new(temp_dir.path().to_str().unwrap()).unwrap();
         let issues = linter.check_commits_since_last_tag().unwrap();
-        assert!(
-            issues.is_empty(),
-            "Expected no issues but got: {:?}",
-            issues
-        );
+        assert!(issues.is_empty(), "Expected no issues but got: {issues:?}");
     }
 
     #[test]

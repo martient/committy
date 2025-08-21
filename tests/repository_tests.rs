@@ -288,8 +288,7 @@ fn test_commit_from_subdirectory() -> Result<(), CliError> {
     let head_message = head_commit.message().unwrap_or("");
     assert_eq!(
         head_message, commit_message,
-        "Expected commit message '{}' but got '{}'",
-        commit_message, head_message
+        "Expected commit message '{commit_message}' but got '{head_message}'"
     );
 
     // Get the parent commit to verify the history

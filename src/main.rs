@@ -77,17 +77,9 @@ fn main() {
 
     if let Err(e) = run(&mut config) {
         // Map specific errors to exit codes
-        if let Some(cli_err) = e.downcast_ref::<CliError>() {
-            match cli_err {
-                CliError::LintIssues(_) => {
-                    eprintln!("{e}");
-                    std::process::exit(3);
-                }
-                _ => {
-                    eprintln!("{e}");
-                    std::process::exit(1);
-                }
-            }
+        if let Some(CliError::LintIssues(_)) = e.downcast_ref::<CliError>() {
+            eprintln!("{e}");
+            std::process::exit(3);
         } else {
             eprintln!("{e}");
             std::process::exit(1);

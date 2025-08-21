@@ -81,7 +81,7 @@ fn test_pre_release_continues_from_highest_version() {
     // Tag v8.3.2 (regular)
     repo.tag(
         "v8.3.2",
-        &repo.head().unwrap().peel_to_commit().unwrap().as_object(),
+        repo.head().unwrap().peel_to_commit().unwrap().as_object(),
         &signature,
         "Regular release",
         false,
@@ -90,7 +90,7 @@ fn test_pre_release_continues_from_highest_version() {
     // Tag v10.0.0-beta.1 (pre-release)
     repo.tag(
         "v10.0.0-beta.1",
-        &repo.head().unwrap().peel_to_commit().unwrap().as_object(),
+        repo.head().unwrap().peel_to_commit().unwrap().as_object(),
         &signature,
         "Pre-release",
         false,

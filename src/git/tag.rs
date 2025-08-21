@@ -110,10 +110,8 @@ impl TagGenerator {
             // default to fetching unless --no-fetch is explicitly passed; --fetch enforces true
             fetch: if options.fetch {
                 true
-            } else if options.no_fetch {
-                false
             } else {
-                true
+                !options.no_fetch
             },
             bump_config_files: allow_bump_config_files,
             current_tag: String::new(),

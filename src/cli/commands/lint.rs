@@ -35,18 +35,16 @@ impl Command for LintCommand {
                         issues: &issues,
                     };
                     println!("{}", serde_json::to_string(&payload).unwrap());
+                } else if issues.is_empty() {
+                    println!(
+                        "✅ All commits since the last tag follow the conventional commit format!"
+                    );
                 } else {
-                    if issues.is_empty() {
-                        println!(
-                            "✅ All commits since the last tag follow the conventional commit format!"
-                        );
-                    } else {
-                        println!("❌ Found {} commit(s) with issues:", issues.len());
-                        for issue in &issues {
-                            println!("\nCommit: {}", issue.commit_id);
-                            println!("Message: {}", issue.message);
-                            println!("Issue: {}", issue.issue);
-                        }
+                    println!("❌ Found {} commit(s) with issues:", issues.len());
+                    for issue in &issues {
+                        println!("\nCommit: {}", issue.commit_id);
+                        println!("Message: {}", issue.message);
+                        println!("Issue: {}", issue.issue);
                     }
                 }
 
