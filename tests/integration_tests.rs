@@ -166,7 +166,12 @@ fn test_tag_prerelease_increments_when_same_base_version() {
 
     // Add a commit that signals no bump (contains #none) and does NOT match bump regexes
     let _ = StdCommand::new("git")
-        .args(["commit", "--allow-empty", "-m", "noop: keep prerelease base #none"])
+        .args([
+            "commit",
+            "--allow-empty",
+            "-m",
+            "noop: keep prerelease base #none",
+        ])
         .current_dir(&temp_dir)
         .output()
         .expect("Failed to create #none commit");
@@ -316,7 +321,7 @@ fn test_fetch_flag_fetch_attempts_fetch_path() {
 fn cleanup(temp_dir: tempfile::TempDir) {
     // Clean up the test repository
     let _ = StdCommand::new("rm")
-        .args(["-rf", ".git"]) 
+        .args(["-rf", ".git"])
         .current_dir(&temp_dir)
         .output()
         .expect("Failed to clean up git repository");
@@ -638,7 +643,9 @@ fn test_lint_text_output_failure() {
         .arg("text")
         .assert()
         .code(3)
-        .stdout(predicate::str::contains("❌ Found 1 commit(s) with issues:"));
+        .stdout(predicate::str::contains(
+            "❌ Found 1 commit(s) with issues:",
+        ));
 
     cleanup(temp_dir);
 }
