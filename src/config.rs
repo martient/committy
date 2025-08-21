@@ -31,6 +31,10 @@ pub struct Config {
     pub metrics_enabled: bool,
     pub last_metrics_reminder: DateTime<FixedOffset>,
     pub user_id: String,
+    // Regex patterns for semantic version bump detection
+    pub major_regex: String,
+    pub minor_regex: String,
+    pub patch_regex: String,
 }
 
 impl Default for Config {
@@ -42,6 +46,9 @@ impl Default for Config {
             last_metrics_reminder: DateTime::parse_from_rfc3339("2006-01-01T00:00:00+01:00")
                 .unwrap(),
             user_id: "".to_string(),
+            major_regex: MAJOR_REGEX.to_string(),
+            minor_regex: MINOR_REGEX.to_string(),
+            patch_regex: PATCH_REGEX.to_string(),
         }
     }
 }
@@ -49,7 +56,7 @@ impl Default for Config {
 impl Config {
     pub fn load() -> Result<Self> {
         let config_path = Self::get_config_path()?;
-        debug!("Loading configuration from {:?}", config_path);
+        debug!("Loading configuration from {config_path:?}");
 
         if !config_path.exists() {
             debug!("No configuration file found, using defaults");
@@ -57,7 +64,7 @@ impl Config {
         }
 
         let config_str = fs::read_to_string(&config_path)?;
-        debug!("Read configuration content: {}", config_str);
+        debug!("Read configuration content: {config_str}");
         // Load config with possible missing fields (serde default fills them)
         let mut config: Self = toml::from_str(&config_str)?;
         // If any field is still default (i.e., was missing in the file), re-save
@@ -77,26 +84,31 @@ impl Config {
     pub fn save(&self) -> Result<()> {
         let config_path = Self::get_config_path()?;
         debug!("Saving configuration");
-        debug!("Configuration path: {:?}", config_path);
-        debug!("Saving configuration to {:?}", config_path);
+        debug!("Configuration path: {config_path:?}");
+        debug!("Saving configuration to {config_path:?}");
 
         if let Some(parent) = config_path.parent() {
-            debug!("Creating config directory: {:?}", parent);
+            debug!("Creating config directory: {parent:?}");
             fs::create_dir_all(parent)?;
         }
 
         let config_str = toml::to_string(self)?;
-        debug!("Writing configuration content: {}", config_str);
+        debug!("Writing configuration content: {config_str}");
         fs::write(config_path, config_str)?;
         debug!("Configuration saved successfully");
         Ok(())
     }
 
     fn get_config_path() -> Result<PathBuf> {
+        if let Ok(dir) = std::env::var("COMMITTY_CONFIG_DIR") {
+            let path = PathBuf::from(dir).join("config.toml");
+            debug!("Config path resolved to: {path:?} via COMMITTY_CONFIG_DIR");
+            return Ok(path);
+        }
         let home =
             dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Could not find home directory"))?;
         let path = home.join(".config").join("committy").join("config.toml");
-        debug!("Config path resolved to: {:?}", path);
+        debug!("Config path resolved to: {path:?}");
         Ok(path)
     }
 }
@@ -104,6 +116,7 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
     use std::env;
     use std::fs;
     use tempfile::Builder;
@@ -116,6 +129,9 @@ mod tests {
 
         // let temp_dir = TempDir::new(Uuid::new_v4().to_string()).unwrap();
         env::set_var("HOME", temp_dir.path());
+        // Point COMMITTY_CONFIG_DIR to a test-specific location to avoid global HOME races
+        let cfg_dir = temp_dir.path().join(".config").join("committy");
+        env::set_var("COMMITTY_CONFIG_DIR", &cfg_dir);
 
         let config = Config {
             last_update_check: DateTime::parse_from_rfc3339("2025-01-08T17:39:49+01:00").unwrap(),
@@ -123,6 +139,9 @@ mod tests {
             last_metrics_reminder: DateTime::parse_from_rfc3339("2025-01-08T17:39:49+01:00")
                 .unwrap(),
             user_id: Uuid::new_v4().to_string(),
+            major_regex: MAJOR_REGEX.to_string(),
+            minor_regex: MINOR_REGEX.to_string(),
+            patch_regex: PATCH_REGEX.to_string(),
         };
 
         (temp_dir, config)
@@ -143,6 +162,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_save_and_load_config() {
         let (_temp_dir, config) = setup_test_env();
 
@@ -158,6 +178,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_load_nonexistent_config() {
         let (temp_dir, _) = setup_test_env();
         let config_dir = temp_dir.path().join(".config").join("committy");
@@ -182,6 +203,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_config_directory_creation() {
         let (temp_dir, config) = setup_test_env();
         let config_dir = temp_dir.path().join(".config").join("committy");
@@ -208,6 +230,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_update_config_values() {
         let (_temp_dir, mut config) = setup_test_env();
 

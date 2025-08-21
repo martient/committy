@@ -33,6 +33,9 @@ pub enum CliError {
 
     #[error("RegexError error: {0}")]
     RegexError(String),
+
+    #[error("Found {0} commit(s) with lint issues")]
+    LintIssues(usize),
 }
 
 impl From<clap::Error> for CliError {

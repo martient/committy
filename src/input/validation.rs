@@ -6,8 +6,7 @@ pub fn validate_short_message(input: &str) -> Result<(), String> {
         Ok(())
     } else {
         Err(format!(
-            "The message must be {} characters or less",
-            MAX_SHORT_DESCRIPTION_LENGTH
+            "The message must be {MAX_SHORT_DESCRIPTION_LENGTH} characters or less"
         ))
     }
 }
@@ -26,8 +25,7 @@ pub fn validate_section(text: &str) -> Result<String, String> {
             Ok(corrected)
         } else {
             Err(format!(
-                "Section must be empty or valid. Suggested correction: {}",
-                corrected
+                "Section must be empty or valid. Suggested correction: {corrected}"
             ))
         }
     }
@@ -101,8 +99,7 @@ pub fn validate_scope(input: &str) -> Result<(), String> {
     } else {
         let corrected = auto_correct_scope(input);
         Err(format!(
-            "Scope must contain only alphanumeric characters and hyphens.\nSuggested correction: {}",
-            corrected
+            "Scope must contain only alphanumeric characters and hyphens.\nSuggested correction: {corrected}"
         ))
     }
 }

@@ -1,12 +1,13 @@
 use anyhow::Result;
 use git2::{ObjectType, Repository, Tag};
 use regex::Regex;
+use serde::Serialize;
 
 pub struct CommitLinter {
     repo: Repository,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct CommitIssue {
     pub commit_id: String,
     pub message: String,
@@ -50,10 +51,8 @@ impl CommitLinter {
         let breaking_change = r"(?:!)?"; // Optional breaking change indicator
         let separator = r"\: ";
         let description = r".+";
-        let full_pattern = format!(
-            "^{}{}{}{}{}$",
-            type_pattern, scope_pattern, breaking_change, separator, description
-        );
+        let full_pattern =
+            format!("^{type_pattern}{scope_pattern}{breaking_change}{separator}{description}$");
         let commit_regex = Regex::new(&full_pattern).unwrap();
 
         // Check each commit
@@ -72,10 +71,8 @@ impl CommitLinter {
                     .iter()
                     .any(|t| first_line.starts_with(t))
                 {
-                    format!(
-                        "Commit type must be one of: {}",
-                        crate::config::COMMIT_TYPES.join(", ")
-                    )
+                    let types = crate::config::COMMIT_TYPES.join(", ");
+                    format!("Commit type must be one of: {types}")
                 } else if first_line.contains("(") && !first_line.contains(")") {
                     "Unclosed scope parenthesis".to_string()
                 } else if first_line.contains(")") && !first_line.contains("(") {
@@ -96,24 +93,24 @@ impl CommitLinter {
 
             // Check minimum length
             if first_line.len() < 10 {
+                let len = first_line.len();
                 issues.push(CommitIssue {
                     commit_id: commit_id.to_string(),
                     message: message.to_string(),
                     issue: format!(
-                        "Commit message is too short (got {} characters, minimum is 10)",
-                        first_line.len()
+                        "Commit message is too short (got {len} characters, minimum is 10)"
                     ),
                 });
             }
 
             // Check maximum length of first line
             if first_line.len() > 72 {
+                let len = first_line.len();
                 issues.push(CommitIssue {
                     commit_id: commit_id.to_string(),
                     message: message.to_string(),
                     issue: format!(
-                        "First line of commit message is too long (got {} characters, maximum is 72)",
-                        first_line.len()
+                        "First line of commit message is too long (got {len} characters, maximum is 72)"
                     ),
                 });
             }
@@ -199,11 +196,7 @@ mod tests {
 
         let linter = CommitLinter::new(temp_dir.path().to_str().unwrap()).unwrap();
         let issues = linter.check_commits_since_last_tag().unwrap();
-        assert!(
-            issues.is_empty(),
-            "Expected no issues but got: {:?}",
-            issues
-        );
+        assert!(issues.is_empty(), "Expected no issues but got: {issues:?}");
     }
 
     #[test]

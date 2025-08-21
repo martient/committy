@@ -28,7 +28,7 @@ impl Command for BranchCommand {
 
         if let Some(name) = &self.name {
             git::create_branch(name, self.force)?;
-            println!("Branch {} created successfully!", name);
+            println!("Branch {name} created successfully!");
         } else {
             if non_interactive {
                 return Err(CliError::InputError(
@@ -41,9 +41,9 @@ impl Command for BranchCommand {
             let subject = input::input_subject()?;
 
             let branch_name = if ticket.is_empty() {
-                format!("{}-{}", branch_type, subject)
+                format!("{branch_type}-{subject}")
             } else {
-                format!("{}-{}-{}", branch_type, ticket, subject)
+                format!("{branch_type}-{ticket}-{subject}")
             };
 
             let validate = if !self.validate {
@@ -56,9 +56,9 @@ impl Command for BranchCommand {
                 return Ok(());
             }
             git::create_branch(&branch_name, self.force)?;
-            println!("Branch {} created successfully!", branch_name);
+            println!("Branch {branch_name} created successfully!");
             git::checkout_branch(&branch_name)?;
-            println!("Switched to branch {}", branch_name);
+            println!("Switched to branch {branch_name}");
             if let Err(e) =
                 tokio::runtime::Runtime::new()
                     .unwrap()
@@ -73,7 +73,7 @@ impl Command for BranchCommand {
                         ]),
                     ))
             {
-                debug!("Telemetry error: {:?}", e);
+                debug!("Telemetry error: {e:?}");
             }
         }
 

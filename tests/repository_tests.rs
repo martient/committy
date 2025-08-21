@@ -1,6 +1,7 @@
 use committy::error::CliError;
 use committy::git::has_staged_changes;
 use git2::Repository;
+use serial_test::serial;
 use std::env;
 use std::fs;
 use tempfile::TempDir;
@@ -39,6 +40,7 @@ fn setup_test_repo() -> (TempDir, Repository) {
 }
 
 #[test]
+#[serial]
 fn test_repository_discovery_from_subdirectory() -> Result<(), CliError> {
     let (temp_dir, repo) = setup_test_repo();
 
@@ -72,6 +74,7 @@ fn test_repository_discovery_from_subdirectory() -> Result<(), CliError> {
 }
 
 #[test]
+#[serial]
 fn test_repository_not_found() {
     // Create a temporary directory that is not a git repository
     let temp_dir = TempDir::new().unwrap();
@@ -96,6 +99,7 @@ fn test_repository_not_found() {
 }
 
 #[test]
+#[serial]
 fn test_staged_deleted_file() -> Result<(), CliError> {
     let (temp_dir, repo) = setup_test_repo();
 
@@ -143,6 +147,7 @@ fn test_staged_deleted_file() -> Result<(), CliError> {
 }
 
 #[test]
+#[serial]
 fn test_no_staged_changes() -> Result<(), CliError> {
     let (temp_dir, repo) = setup_test_repo();
 
@@ -189,6 +194,7 @@ fn test_no_staged_changes() -> Result<(), CliError> {
 }
 
 #[test]
+#[serial]
 fn test_unstaged_changes_only() -> Result<(), CliError> {
     let (temp_dir, _repo) = setup_test_repo();
 
@@ -214,6 +220,7 @@ fn test_unstaged_changes_only() -> Result<(), CliError> {
 }
 
 #[test]
+#[serial]
 fn test_repository_discovery_without_staged_changes() -> Result<(), CliError> {
     let (temp_dir, _repo) = setup_test_repo();
 
@@ -238,6 +245,7 @@ fn test_repository_discovery_without_staged_changes() -> Result<(), CliError> {
 }
 
 #[test]
+#[serial]
 fn test_commit_from_subdirectory() -> Result<(), CliError> {
     let (temp_dir, repo) = setup_test_repo();
 
@@ -280,8 +288,7 @@ fn test_commit_from_subdirectory() -> Result<(), CliError> {
     let head_message = head_commit.message().unwrap_or("");
     assert_eq!(
         head_message, commit_message,
-        "Expected commit message '{}' but got '{}'",
-        commit_message, head_message
+        "Expected commit message '{commit_message}' but got '{head_message}'"
     );
 
     // Get the parent commit to verify the history
