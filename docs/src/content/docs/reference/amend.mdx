@@ -2,3 +2,33 @@
 title: Commit Amend
 description: How to amend a commit
 ---
+
+## Overview
+
+Interactively amend the previous commit using conventional commit prompts. This command is interactive-only.
+Amends the previous commit message and optionally content.
+
+## Usage
+
+```bash
+# Interactive prompts for type, breaking-change, scope, short and long messages
+committy amend
+```
+
+## Behavior
+
+- __Interactive only__: running with `--non-interactive` returns an error.
+- Prompts for: type, breaking change, scope, short message, and long message.
+- Formats final message as `<type>(<scope>)!: <short>\n\n<long>` as applicable, then amends the last commit.
+- __No staged changes required__: you can amend just the message. If there are staged changes, they will be included.
+- Uses the current index (if any) for the amended commit tree.
+- For non-interactive amend, use `committy commit --amend` with flags; note that path __requires staged changes__.
+
+## Exit codes
+
+- __0__: success
+- __1__: generic error (e.g., non-interactive usage, git errors)
+
+## Notes
+
+- Use regular `committy commit` for new commits. Use `--amend` when you only want to adjust the previous commit message/content.

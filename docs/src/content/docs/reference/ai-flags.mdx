@@ -1,0 +1,80 @@
+---
+title: AI flags & security
+description: Configure AI-assisted commit messaging and understand privacy safeguards
+sidebar:
+  label: AI flags & security
+  order: 60
+---
+
+Committy can optionally use AI to suggest and validate commit messages in `group-commit`.
+This page enumerates flags, best practices, and security considerations.
+
+## Enabling AI
+
+Add `--ai` to `group-commit`:
+
+```bash
+committy --non-interactive group-commit --mode plan --output json \
+  --ai --ai-provider openrouter --ai-model openrouter/some-model \
+  --ai-api-key-env OPENROUTER_API_KEY
+```
+
+## Flags
+
+- `--ai` — enable AI-assisted suggestions/validation
+- `--ai-provider <openrouter|ollama>` — provider selection
+- `--ai-model <string>` — model identifier
+- `--ai-api-key-env <ENV_NAME>` — env var name that holds provider API key
+- `--ai-base-url <url>` — override base URL (e.g., for self-hosted or gateways)
+- `--ai-max-tokens <n>` — model tokens cap for responses
+- `--ai-temperature <float>` — creativity setting
+- `--ai-timeout-ms <ms>` — request timeout
+- `--no-ai-json-mode` — do not force JSON-mode (advanced; prefer default)
+- `--ai-system-prompt <text>` — inline system prompt override
+- `--ai-system-prompt-file <path>` — load system prompt from file
+- `--ai-file-limit <n>` — limit how many files are described to AI
+- `--ai-allow-sensitive` — allow sending sensitive file content (off by default)
+
+## Security & privacy
+
+- __Sensitive content is not sent__ by default. The tool shares filenames and summarized context.
+- Only pass `--ai-allow-sensitive` if required and you trust the provider. This may include snippets or diff lines from code.
+- Prefer using an API key via env var name with `--ai-api-key-env` to avoid leaking keys in process lists or logs.
+- Use `--ai-file-limit` to reduce context size and exposure.
+- Consider on-premise providers (`ollama`) for maximum privacy.
+
+## Failure handling
+
+- AI suggestions are validated by Committy's linter. If invalid or timed out, Committy falls back to safe default messages per group.
+- JSON parsing is strict; malformed outputs are rejected and replaced with defaults.
+
+## MCP integration
+
+When using the MCP server, equivalent fields are forwarded to the Rust CLI. See the [MCP server](/reference/mcp/) page for tools, inputs, and examples.
+
+## Provider examples
+
+### OpenRouter
+
+```bash
+# export your key and reference by env var name
+export OPENROUTER_API_KEY=sk-or-...
+
+committy --non-interactive group-commit --mode plan --output json \
+  --ai --ai-provider openrouter \
+  --ai-model openrouter/anthropic/claude-3.5-sonnet \
+  --ai-api-key-env OPENROUTER_API_KEY \
+  --ai-max-tokens 600 --ai-temperature 0.2
+```
+
+### Ollama (local)
+
+```bash
+# ensure Ollama is running locally; default base URL is http://127.0.0.1:11434
+# no API key needed for local Ollama
+
+committy --non-interactive group-commit --mode apply --output json \
+  --ai --ai-provider ollama \
+  --ai-model llama3.1:8b \
+  --ai-timeout-ms 30000 --ai-file-limit 64
+```

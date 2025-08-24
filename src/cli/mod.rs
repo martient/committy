@@ -1,6 +1,6 @@
 pub mod commands;
 
-use self::commands::{amend, branch, commit, lint, tag};
+use self::commands::{amend, branch, commit, group_commit, lint, lint_message, tag};
 use crate::error::CliError;
 use structopt::StructOpt;
 
@@ -18,8 +18,12 @@ pub enum CliCommand {
     Tag(tag::TagCommand),
     #[structopt(about = "Check commits since last tag for conventional format")]
     Lint(lint::LintCommand),
+    #[structopt(about = "Lint a single commit message for conventional format")]
+    LintMessage(lint_message::LintMessageCommand),
     #[structopt(about = "Create a new branch")]
     Branch(branch::BranchCommand),
+    #[structopt(about = "Group changes and optionally commit/apply them (with optional AI)")]
+    GroupCommit(group_commit::GroupCommitCommand),
 }
 
 impl CliCommand {
@@ -29,7 +33,9 @@ impl CliCommand {
             CliCommand::Amend(cmd) => cmd.execute(non_interactive),
             CliCommand::Tag(cmd) => cmd.execute(non_interactive),
             CliCommand::Lint(cmd) => cmd.execute(non_interactive),
+            CliCommand::LintMessage(cmd) => cmd.execute(non_interactive),
             CliCommand::Branch(cmd) => cmd.execute(non_interactive),
+            CliCommand::GroupCommit(cmd) => cmd.execute(non_interactive),
         }
     }
 }

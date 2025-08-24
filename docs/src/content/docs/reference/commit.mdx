@@ -2,3 +2,93 @@
 title: Commit
 description: How to generate a commit message
 ---
+
+## Overview
+
+Create a conventional commit for your staged changes. Interactive by default; supports non-interactive flags for CI/scripts.
+
+Requires staged changes. If no files are staged, the CLI returns an error.
+
+## Usage
+
+```bash
+# Interactive (prompts for type, scope, messages)
+committy commit
+
+# Non-interactive (CI-friendly)
+committy --non-interactive commit \
+  --type feat \
+  --message "add login flow" \
+  --scope web \
+  --long-message "Implements OAuth; adds tests" \
+  --breaking-change
+
+# Amend previous commit (interactive, message-only allowed)
+committy amend
+
+# Amend previous commit via commit flags (requires staged changes)
+committy commit --amend
+```
+
+## Flags
+
+- __--type__ `<string>` 
+  Type of commit. Must be one of `config::COMMIT_TYPES` (e.g., feat, fix, docs, chore, refactor, test, ci, build).
+  - Interactive: prompted if omitted.
+  - Non-interactive: required.
+  - Auto-correction: near matches may be auto-corrected to a valid type.
+
+- __--scope__ `<string>` 
+  Optional scope. In interactive mode, scope is validated; in non-interactive mode, scope is auto-corrected (lowercased, trimmed, kebab-case).
+
+- __--message__ `<string>` 
+  Short commit message (first line). Required in non-interactive mode; prompted interactively otherwise.
+
+- __--long-message__ `<string>` 
+  Detailed body text. Optional; prompted interactively if omitted.
+
+- __--breaking-change__
+  Marks the commit as breaking (adds `!` after type/scope). Prompted interactively if not provided.
+
+- __--amend__
+  Amend the previous commit using the composed message.
+
+## Behavior
+
+- Validates git config first; errors if misconfigured.
+- Errors if no staged changes.
+- Non-interactive mode requires `--type` and `--message`.
+- Message is formatted as `<type>(<scope>)!: <short>\n\n<long>` depending on provided options.
+- To amend the last commit without staged changes, use `committy amend` (interactive). Using `committy commit --amend` requires staged changes.
+
+## Examples
+
+```bash
+# Minimal interactive
+committy commit
+
+# Minimal non-interactive
+committy --non-interactive commit --type fix --message "prevent panic on empty input"
+
+# With scope and long message
+committy --non-interactive commit \
+  --type feat --scope api \
+  --message "support bulk create" \
+  --long-message "Adds new endpoint and pagination."
+
+# Breaking change
+committy --non-interactive commit \
+  --type feat --scope storage \
+  --breaking-change \
+  --message "drop legacy v1 API"
+```
+
+## Exit codes
+
+- __0__: success
+- __1__: generic error (e.g., no staged changes, invalid inputs)
+
+## Notes
+
+- Interactive prompts: commit type, breaking-change, scope, short message, long message.
+- Auto-correction: commit type and scope may be adjusted (e.g. casing) to match conventions.

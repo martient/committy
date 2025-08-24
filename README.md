@@ -42,6 +42,13 @@ committy
 
 ![Commit demo](docs/public/demos/commit.gif)
 
+## 📚 Documentation
+
+- Full docs live in `docs/` (Astro + Starlight): `docs/src/content/docs/`
+- Key references:
+  - Group Commit: `docs/src/content/docs/reference/group-commit.mdx`
+  - AI Flags & Security: `docs/src/content/docs/reference/ai-flags.mdx`
+
 ## 🛠 Options and Commands
 
 ### Amend an existing commit
@@ -65,6 +72,70 @@ committy -s "change the api version"
 ```shell
 committy -s "change the api version" amend
 ```
+
+## ⚙️ CLI Reference & Advanced Usage
+
+### Output format
+
+- Use `--output json|text` on commands that support it.
+- `lint --output json` prints `{ ok, count, issues }`.
+- `tag --output json` (with `--dry-run`) prints `{ ok, new_tag }`.
+
+### Verbosity
+
+- `-v` or `--verbose`: increase log verbosity. Repeat for more details (`-vv`).
+- `-q` or `--quiet`: only error logs.
+- Defaults to `info` when neither is provided.
+
+### Non-interactive mode
+
+- `--non-interactive` disables prompts (ideal for CI).
+- Also enabled when `COMMITTY_NONINTERACTIVE=1` or `CI=1`.
+
+### Fetch control for tags
+
+- `--fetch` / `--no-fetch` controls whether tags are fetched from remote before calculation.
+- Default: fetch is enabled unless `--no-fetch` is provided.
+- Example (no remote access):
+
+```bash
+committy --non-interactive tag --no-fetch --dry-run --not-publish --output json
+```
+
+### Stable lint exit codes (for CI)
+
+- `0` = OK, no issues
+- `3` = Lint issues found
+- `1` = Error
+
+Example:
+
+```bash
+committy --non-interactive lint --repo-path . --output json || {
+  code=$?; if [ $code -eq 3 ]; then echo "Lint issues"; else exit $code; fi
+}
+```
+
+### Configurable version bump rules
+
+Committy determines semantic version bumps using regex patterns loaded from `config.toml`.
+
+- Default location: `~/.config/committy/config.toml`
+- Override directory with `COMMITTY_CONFIG_DIR` (the file must be named `config.toml`).
+- Keys:
+  - `major_regex`
+  - `minor_regex`
+  - `patch_regex`
+
+Example `config.toml` (use single quotes for literal regex):
+
+```toml
+minor_regex = '(?im)^fix(?:\s*\([^)]*\))?:'
+patch_regex = '(?im)^docs(?:\s*\([^)]*\))?:'
+major_regex = '(?im)^(breaking change:|feat(?:\s*\([^)]*\))?!:)'
+```
+
+This example treats `fix:` commits as a minor bump (instead of patch) and moves `docs:` to patch.
 
 ## 📝 Commit Types
 

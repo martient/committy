@@ -81,19 +81,42 @@ fn test_pre_release_continues_from_highest_version() {
     // Tag v8.3.2 (regular)
     repo.tag(
         "v8.3.2",
-        &repo.head().unwrap().peel_to_commit().unwrap().as_object(),
+        repo.head().unwrap().peel_to_commit().unwrap().as_object(),
         &signature,
         "Regular release",
         false,
-    ).unwrap();
+    )
+    .unwrap();
     // Tag v10.0.0-beta.1 (pre-release)
     repo.tag(
         "v10.0.0-beta.1",
-        &repo.head().unwrap().peel_to_commit().unwrap().as_object(),
+        repo.head().unwrap().peel_to_commit().unwrap().as_object(),
         &signature,
         "Pre-release",
         false,
-    ).unwrap();
+    )
+    .unwrap();
+
+    // Create a new commit after the tags so the tag command has something to process
+    {
+        let file_path = dir.path().join("chore.txt");
+        fs::write(&file_path, "chore change").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(std::path::Path::new("chore.txt")).unwrap();
+        index.write().unwrap();
+        let tree_id = index.write_tree().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+        let parent = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.commit(
+            Some("HEAD"),
+            &signature,
+            &signature,
+            "misc: new commit after tags #none",
+            &tree,
+            &[&parent],
+        )
+        .unwrap();
+    }
 
     // Run the tag command in pre-release mode (should produce v10.0.0-beta.2)
     let mut cmd = Command::cargo_bin("committy").unwrap();

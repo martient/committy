@@ -38,6 +38,18 @@ pub async fn publish_event(
     event: &str,
     properties: HashMap<&str, Value>,
 ) -> Result<(), TelemetryError> {
+    // Skip telemetry entirely in CI or non-interactive environments
+    let env_non_interactive = std::env::var("COMMITTY_NONINTERACTIVE")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+        || std::env::var("CI")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+    if env_non_interactive {
+        debug!("Telemetry disabled in non-interactive/CI environment");
+        return Ok(());
+    }
+
     if POSTHOG_API_KEY == "undefined" {
         debug!("POSTHOG_API_KEY is not set");
         return Ok(());
@@ -71,7 +83,7 @@ pub async fn publish_event(
     for attempt in 1..=3 {
         match HTTP_CLIENT.post(url).json(&payload).send().await {
             Ok(resp) if resp.status().is_success() => {
-                debug!("Event sent: {}", event);
+                debug!("Event sent: {event}");
                 return Ok(());
             }
             Ok(resp) if resp.status().is_client_error() || resp.status().is_server_error() => {
@@ -80,7 +92,7 @@ pub async fn publish_event(
                 }
             }
             Err(e) => {
-                error!("Attempt {} error: {}", attempt, e);
+                error!("Attempt {attempt} error: {e}");
                 if attempt == 3 {
                     return Err(TelemetryError::Http(e));
                 }

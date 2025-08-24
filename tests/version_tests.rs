@@ -192,7 +192,7 @@ version = "1.0.0""#,
 
     for (name, content) in files {
         let file_path = temp_dir.path().join(name);
-        fs::write(&file_path, content).unwrap_or_else(|_| panic!("Failed to write {}", name));
+        fs::write(&file_path, content).unwrap_or_else(|_| panic!("Failed to write {name}"));
     }
 
     // Register and update all common files
@@ -433,7 +433,7 @@ version = "1.0.0"
         .peel_to_commit()
         .expect("Failed to get HEAD commit");
     let commit_message = head_commit.message().unwrap_or("");
-    println!("Actual commit message: {}", commit_message);
+    println!("Actual commit message: {commit_message}");
     assert!(
         commit_message.contains("chore: bump version to 1.1.0"),
         "Commit message incorrect"

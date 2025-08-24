@@ -2,3 +2,67 @@
 title: Update
 description: How to update committy
 ---
+
+## Overview
+
+Committy can check for and install updates via global flags. These can be used standalone or alongside subcommands.
+
+## Usage
+
+```bash
+# Check if a new version is available (no install)
+committy --check-update
+
+# Update to the latest stable
+committy --update
+
+# Include pre-releases when checking/updating
+committy --check-update --pre-release
+committy --update --pre-release
+
+# CI/non-interactive mode (also enabled by env COMMITTY_NONINTERACTIVE=1 or CI=1)
+COMMITTY_NONINTERACTIVE=1 committy --update
+```
+
+## Global flags
+
+- __--check-update__
+  Check if a new version is available and print a message.
+
+- __--update__
+  Install the latest version if available. In interactive sessions, Committy may prompt to confirm.
+
+- __--pre-release__
+  Include pre-release versions when checking or updating.
+
+- __--non-interactive__
+  Run without interactive prompts. Also enabled when `COMMITTY_NONINTERACTIVE=1` or `CI=1`.
+
+- __--metrics-toggle__
+  Toggle anonymous metrics collection on/off and persist to config.
+
+- __-v/--verbose, -vv__ and __-q/--quiet__
+  Control log verbosity.
+
+## Behavior
+
+- When `--check-update` or `--update` is provided, Committy runs the update flow before executing any subcommand.
+- Messages are printed via the logger, e.g., "New version X is available!" or "You're running the latest version!".
+- In non-interactive mode, update proceeds without prompts.
+- Background reminders:
+  - Metrics reminder prints once per week when enabled.
+  - Update checks may run automatically once per day when using the CLI interactively.
+
+## Exit codes
+
+- __0__: success
+- __1__: generic error
+
+## Examples
+
+```bash
+# Check and then tag if you're up-to-date
+committy --check-update tag --output json
+
+# Force non-interactive update in CI
+CI=1 committy --update
