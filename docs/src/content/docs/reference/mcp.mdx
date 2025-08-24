@@ -1,0 +1,129 @@
+---
+title: MCP server
+description: Use Committy via Model Context Protocol tools
+sidebar:
+  label: MCP server
+  order: 65
+---
+
+## Overview
+
+The Committy MCP server is a Node.js/TypeScript stdio server that wraps the Rust `committy` CLI and exposes tools for linting, tagging, formatting conventional commits, and grouping/applying changes (optionally with AI).
+
+- Package path: `mcp-server-committy/`
+- Server type: stdio (started by an MCP client)
+
+## Requirements
+
+- Node.js 18+
+- The Rust `committy` binary available on PATH as `committy`, or set `COMMITTY_BIN` to its absolute path.
+
+## Install and run
+
+```bash
+# In mcp-server-committy/
+npm ci
+npm run build
+
+# Development (watch mode)
+npm run dev
+
+# Start (built)
+npm start
+# or
+node dist/index.js
+```
+
+Optional: link a local CLI binary for convenience.
+
+```bash
+npm link
+mcp-server-committy  # stdio server
+```
+
+If `committy` isn’t on PATH, set:
+
+```bash
+export COMMITTY_BIN=/absolute/path/to/committy
+```
+
+## Configure your MCP client
+
+- Configure your MCP client to launch the stdio server command in `mcp-server-committy/`:
+  - `mcp-server-committy` (after `npm link`) or `node dist/index.js`
+- Environment variables to consider:
+  - `COMMITTY_BIN` — absolute path to the Rust CLI if not on PATH
+  - For AI usage, provide provider keys via an env var named by the tool input `ai_api_key_env` (e.g., `OPENROUTER_API_KEY`). Set this on the MCP server process.
+
+## Tools
+
+- mcp0_lint_repo_since_last_tag
+  - Input: `{ repo_path: string }`
+  - Lints commits since the last tag.
+
+- mcp0_lint_message
+  - Input: `{ message: string }`
+  - Lints a single commit message.
+
+- mcp0_compute_next_tag
+  - Input: `{ repo_path: string, fetch?: boolean, prerelease?: boolean, prerelease_suffix?: string, release_branches?: string[] }`
+  - Computes the next tag without mutating the repo.
+
+- mcp0_apply_tag
+  - Input: `{ repo_path: string, name?: string, fetch?: boolean, prerelease?: boolean, prerelease_suffix?: string, release_branches?: string[], bump_files?: boolean, tag_message?: string, confirm_push: boolean }`
+  - Creates/pushes a tag. Requires `confirm_push: true`.
+
+- mcp0_format_message
+  - Input: `{ commit_type: string, short: string, scope?: string, long?: string, breaking?: boolean }`
+  - Returns a conventional commit message string.
+
+- mcp0_generate_guidelines
+  - Input: `{ repo_path: string, additional_files?: string[], max_bytes?: number }`
+  - Reads and summarizes repo guidelines (README, CONTRIBUTING, changelog config).
+
+- mcp0_group_commit_plan
+  - Input: `{ repo_path: string, include_unstaged?: boolean, ai?: boolean, ai_provider?: "openrouter"|"ollama", ai_model?: string, ai_api_key_env?: string, ai_base_url?: string, ai_max_tokens?: number, ai_temperature?: number, ai_timeout_ms?: number, no_ai_json_mode?: boolean, ai_system_prompt?: string, ai_system_prompt_file?: string, ai_file_limit?: number, ai_allow_sensitive?: boolean }`
+  - Plans grouped commits and returns JSON plan: `{ command: "group-commit", mode: "plan", ok, groups, errors? }`.
+
+- mcp0_group_commit_apply
+  - Same inputs as plan plus apply behavior; executes grouped commits and optionally pushes.
+  - Returns `{ command: "group-commit", mode: "apply", ok, groups, commits, pushed?, errors? }`.
+
+## AI flags & security
+
+- AI-related inputs mirror the Rust CLI `group-commit` flags. See [AI flags & security](/reference/ai-flags/).
+- By default, sensitive file content is not sent. Only set `ai_allow_sensitive=true` if you accept the risk.
+- Provide API keys via an env var set on the MCP server process, referenced by `ai_api_key_env`.
+
+## Examples
+
+- Lint repo since last tag:
+
+```json
+{
+  "tool": "mcp0_lint_repo_since_last_tag",
+  "params": { "repo_path": "/path/to/repo" }
+}
+```
+
+- Group-commit plan with OpenRouter:
+
+```json
+{
+  "tool": "mcp0_group_commit_plan",
+  "params": {
+    "repo_path": "/path/to/repo",
+    "ai": true,
+    "ai_provider": "openrouter",
+    "ai_model": "openrouter/anthropic/claude-3.5-sonnet",
+    "ai_api_key_env": "OPENROUTER_API_KEY",
+    "ai_max_tokens": 600,
+    "ai_temperature": 0.2
+  }
+}
+```
+
+## Troubleshooting
+
+- "committy not found": set `COMMITTY_BIN` to the Rust CLI path.
+- Tool outputs are JSON strings in `text` content; your client should parse the JSON.

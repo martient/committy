@@ -1,0 +1,82 @@
+---
+title: group-commit (plan/apply)
+description: Plan and apply grouped commits by category with optional AI-assisted messages
+sidebar:
+  label: group-commit (plan/apply)
+  order: 50
+---
+
+Use the group-commit command to analyze pending changes, group them by category, and optionally create one commit per group. It supports plan (no mutations) and apply (mutating) modes and can generate/validate commit messages with AI.
+
+## Plan mode (no mutations)
+
+```bash
+committy --non-interactive group-commit --mode plan --output json [--include-unstaged]
+```
+
+- Prints a JSON plan with groups and suggested messages.
+- Use `--include-unstaged` to include unstaged changes in the analysis.
+
+## Apply mode (mutating)
+
+```bash
+committy --non-interactive group-commit --mode apply --output json \
+  [--include-unstaged] [--auto-stage] [--push]
+```
+
+- Creates one commit per group using validated messages.
+- `--auto-stage`: stages only the files of the current group before committing.
+- `--push`: push commits after creation.
+
+## Grouping categories
+
+Files are categorized with patterns into groups like: `docs`, `tests`, `ci`, `deps`, `build`, `chore`, `code`.
+
+## AI-assisted messages (optional)
+
+Enable AI to suggest and validate messages per group. See the dedicated "AI flags & security" page for all flags and precautions.
+
+Quick example with OpenRouter:
+
+```bash
+committy --non-interactive group-commit --mode plan --output json \
+  --ai --ai-provider openrouter --ai-model openrouter/some-model \
+  --ai-api-key-env OPENROUTER_API_KEY
+```
+
+## JSON outputs
+
+Plan result (shape):
+
+```json
+{
+  "command": "group-commit",
+  "mode": "plan",
+  "ok": true,
+  "groups": [
+    {"name": "docs", "commit_type": "docs", "files": ["README.md"], "suggested_message": "docs: update README"}
+  ],
+  "errors": []
+}
+```
+
+Apply result (shape):
+
+```json
+{
+  "command": "group-commit",
+  "mode": "apply",
+  "ok": true,
+  "groups": [...],
+  "commits": [
+    {"group": "docs", "message": "docs: update README", "ok": true, "sha": "<sha>"}
+  ],
+  "pushed": false,
+  "errors": []
+}
+```
+
+## Notes
+
+- Non-interactive mode is implied in CI (also set by `COMMITTY_NONINTERACTIVE=1`).
+- Messages are linted and validated; fallbacks are used when AI output is invalid.
