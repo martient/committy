@@ -42,6 +42,13 @@ committy
 
 ![Commit demo](docs/public/demos/commit.gif)
 
+## 📚 Documentation
+
+- Full docs live in `docs/` (Astro + Starlight): `docs/src/content/docs/`
+- Key references:
+  - Group Commit: `docs/src/content/docs/reference/group-commit.mdx`
+  - AI Flags & Security: `docs/src/content/docs/reference/ai-flags.mdx`
+
 ## 🛠 Options and Commands
 
 ### Amend an existing commit

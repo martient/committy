@@ -2,3 +2,105 @@
 title: Tag
 description: How the tag works
 ---
+
+## Overview
+
+Create and push a new semantic version tag based on commit history. Supports explicit tag names or automatic calculation with rich options.
+
+Rejects execution when there are staged changes.
+
+## Usage
+
+```bash
+# Interactive: confirm and create next tag
+committy tag
+
+# Non-interactive: auto-calculate and act based on flags
+committy --non-interactive tag --fetch --default-bump minor
+
+# Create a tag with an explicit name (skips calculation)
+committy tag --name v1.2.3
+
+# Pre-release flow
+committy --non-interactive tag --prerelease --prerelease-suffix beta
+
+# Bump versions in config files when tagging
+committy --non-interactive tag --bump-files
+```
+
+## Flags (TagCommand)
+
+- __--name__ `<string>`
+  Provide a tag name to create directly (skips calculation).
+
+- __-y, --validate__
+  Confirm creation without prompting (interactive path). If omitted, you'll be prompted.
+
+- __--bump-files__ (alias: `-bfs`)
+  Auto-bump registered version files to the new version and commit them.
+
+- __--output__ `<text|json>`
+  Output format. Defaults to `text`.
+
+## Flags (TagGeneratorOptions)
+
+- __--default-bump__ `<string>` (default: `minor`)
+- __--not-with-v__
+  Emit tags without leading `v`.
+- __--release-branches__ `<string>` (default: `master,main`)
+  Comma-separated list. Branches outside this set are treated as pre-release by default.
+- __--source__ `<string>` (default: `.`)
+- __--dry-run__
+- __--initial-version__ `<string>` (default: `0.0.0`)
+- __--prerelease__
+- __--prerelease-suffix__ `<string>` (default: `beta`)
+- __--none-string-token__ `<string>` (default: `#none`)
+- __--force-without-change__
+- __--tag-message__ `<string>`
+- __--not-publish__
+- __--fetch__
+- __--no-fetch__
+
+## Behavior
+
+- Errors if there are staged changes.
+- When `--name` is provided: creates and (unless `--not-publish`) pushes that tag immediately.
+- Non-interactive without `--name`: calculates new tag from commit log using regex rules in config and options above, then creates/pushes it.
+- `--bump-files`: updates common version files, commits them (message: `chore: bump version to <x.y.z>`), and pushes commit (unless `--not-publish`).
+- Fetch behavior: default is fetch unless `--no-fetch`; `--fetch` forces fetch.
+
+## JSON output
+
+- With `--name`:
+
+```json
+{ "ok": true, "new_tag": "v1.2.3" }
+```
+
+- Calculated tag (interactive or non-interactive when `--output json`):
+
+```json
+{
+  "ok": true,
+  "old_tag": "v1.2.2",
+  "new_tag": "v1.2.3",
+  "pre_release": false
+}
+```
+
+## Exit codes
+
+- __0__: success
+- __1__: generic error (e.g., staged changes, git failures)
+
+## Examples
+
+```bash
+# Print next tag (non-interactive) for pipelines
+committy --non-interactive tag --output json | jq -r '.new_tag'
+
+# Pre-release from feature branch
+committy --non-interactive tag --prerelease --prerelease-suffix rc
+
+# Tag without leading 'v'
+committy --non-interactive tag --not-with-v

@@ -2,3 +2,72 @@
 title: Lint
 description: How to check commits since last tag for conventional format
 ---
+
+## Overview
+
+Validate commit messages since the last tag against Committy's conventional commit rules. Supports text and JSON output.
+
+## Usage
+
+```bash
+# Text output (default)
+committy lint
+
+# JSON output (CI-friendly)
+committy lint --output json
+
+# Lint a different repo path
+committy lint --repo-path /path/to/repo
+```
+
+## Flags
+
+- __--repo-path__ `<string>`
+  Git repository path. Defaults to `.` (current directory).
+
+- __--output__ `<text|json>`
+  Output format. Defaults to `text`.
+
+## Behavior
+
+- Scans commits from `HEAD` back to the last tag.
+- If repository has no commits (unborn branch), returns success with no issues.
+- Lints the first line against pattern: `<type>(<scope>)!: <description>`.
+  - Types allowed are configured in `config::COMMIT_TYPES`.
+  - Reports specific issues (missing separator, invalid type, parentheses issues, length constraints: min 10, max 72 for first line).
+
+## JSON output schema
+
+When `--output json` is used:
+
+```json
+{
+  "ok": true,
+  "count": 0,
+  "issues": [
+    {
+      "commit_id": "<sha>",
+      "message": "<full commit message>",
+      "issue": "<description>"
+    }
+  ]
+}
+```
+
+- `ok` is `true` when `issues` is empty.
+- `count` equals the number of issues.
+
+## Exit codes
+
+- __0__: no issues
+- __3__: lint issues found (matches `CliError::LintIssues` mapped in `src/main.rs`)
+- __1__: generic error (e.g., repo open failure)
+
+## Examples
+
+```bash
+# Fail CI if issues are found
+committy lint --output json | jq '.ok' | grep -q true
+
+# Lint a submodule
+committy lint --repo-path ./submodule
