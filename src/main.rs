@@ -4,6 +4,7 @@ mod cli;
 mod config;
 mod error;
 mod git;
+mod ai;
 mod input;
 mod linter;
 mod logger;

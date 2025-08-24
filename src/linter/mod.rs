@@ -137,6 +137,66 @@ impl CommitLinter {
     }
 }
 
+/// Lint a single commit message string using the same rules as repository linting.
+/// Returns a list of issue descriptions; empty if the message passes all checks.
+pub fn check_message_format(message: &str) -> Vec<String> {
+    let mut issues = Vec::new();
+
+    let message = message.trim();
+    let first_line = message.lines().next().unwrap_or("");
+
+    // Conventional commit regex parts
+    let type_pattern = format!(r"(?:{})", crate::config::COMMIT_TYPES.join("|"));
+    let scope_pattern = r"(?:\([a-z0-9-]+\))?";
+    let breaking_change = r"(?:!)?"; // Optional breaking change indicator
+    let separator = r"\: ";
+    let description = r".+";
+    let full_pattern =
+        format!("^{type_pattern}{scope_pattern}{breaking_change}{separator}{description}$");
+    let commit_regex = Regex::new(&full_pattern).unwrap();
+
+    // Check if commit message follows conventional commit format
+    if !commit_regex.is_match(first_line) {
+        let issue = if !first_line.contains(": ") {
+            "Missing ': ' separator between type/scope and description".to_string()
+        } else if !crate::config::COMMIT_TYPES
+            .iter()
+            .any(|t| first_line.starts_with(t))
+        {
+            let types = crate::config::COMMIT_TYPES.join(", ");
+            format!("Commit type must be one of: {types}")
+        } else if first_line.contains("(") && !first_line.contains(")") {
+            "Unclosed scope parenthesis".to_string()
+        } else if first_line.contains(")") && !first_line.contains("(") {
+            "Unopened scope parenthesis".to_string()
+        } else if first_line.contains("()") {
+            "Empty scope parenthesis".to_string()
+        } else {
+            "Commit message format should be: <type>(<scope>): <description>".to_string()
+        };
+        issues.push(issue);
+        return issues; // Match behavior of repo linting: when format is invalid, do not report length issues
+    }
+
+    // Check minimum length
+    if first_line.len() < 10 {
+        let len = first_line.len();
+        issues.push(format!(
+            "Commit message is too short (got {len} characters, minimum is 10)"
+        ));
+    }
+
+    // Check maximum length of first line
+    if first_line.len() > 72 {
+        let len = first_line.len();
+        issues.push(format!(
+            "First line of commit message is too long (got {len} characters, maximum is 72)"
+        ));
+    }
+
+    issues
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

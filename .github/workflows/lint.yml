@@ -27,3 +27,42 @@ jobs:
       run: cargo clippy -- -D warnings
     - name: Run tests
       run: cargo test -- --test-threads=1
+    - name: Smoke test lint-message CLI
+      run: |
+        cargo run -- --non-interactive lint-message --message "feat: CI smoke test for lint-message"
+
+  mcp_ts:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mcp-server-committy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: mcp-server-committy/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build
+        run: npm run build
+      - name: Run unit tests
+        run: npm test --if-present
+
+  docs_build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: docs
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm install
+      - name: Build docs
+        run: npm run build

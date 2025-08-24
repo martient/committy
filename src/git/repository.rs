@@ -65,6 +65,43 @@ pub fn has_staged_changes() -> Result<bool, CliError> {
     Ok(false)
 }
 
+/// List changed files in the repository. If `include_unstaged` is true,
+/// include workdir modifications in addition to index changes.
+pub fn list_changed_files(include_unstaged: bool) -> Result<Vec<String>, CliError> {
+    let repo = discover_repository()?;
+    let mut opts = StatusOptions::new();
+    opts.include_ignored(false)
+        .include_untracked(true)
+        .include_unmodified(false)
+        .recurse_untracked_dirs(true)
+        .exclude_submodules(true)
+        .show(if include_unstaged {
+            StatusShow::IndexAndWorkdir
+        } else {
+            StatusShow::Index
+        });
+
+    let statuses = repo.statuses(Some(&mut opts))?;
+    let mut set: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+
+    for entry in statuses.iter() {
+        if let Some(path) = entry.path() {
+            set.insert(path.to_string());
+        }
+        // For renames, path may be None; try head_to_index or index_to_workdir
+        if let Some(delta) = entry.head_to_index().or_else(|| entry.index_to_workdir()) {
+            if let Some(new_file) = delta.new_file().path() {
+                set.insert(new_file.to_string_lossy().to_string());
+            }
+            if let Some(old_file) = delta.old_file().path() {
+                set.insert(old_file.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    Ok(set.into_iter().collect())
+}
+
 fn get_config_value(config: &Config, key: &str) -> Option<String> {
     match config.get_string(key) {
         Ok(value) if !value.trim().is_empty() => Some(value),
