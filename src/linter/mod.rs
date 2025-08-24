@@ -119,7 +119,7 @@ impl CommitLinter {
         Ok(issues)
     }
 
-    fn get_last_tag(&self) -> Result<Option<Tag>> {
+    fn get_last_tag(&'_ self) -> Result<Option<Tag<'_>>> {
         let mut tags = Vec::new();
         self.repo.tag_foreach(|id, _| {
             if let Ok(obj) = self.repo.find_object(id, Some(ObjectType::Tag)) {
