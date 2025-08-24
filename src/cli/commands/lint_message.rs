@@ -7,7 +7,10 @@ use std::io::{self, Read};
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
-#[structopt(name = "lint-message", about = "Lint a single commit message for conventional format")]
+#[structopt(
+    name = "lint-message",
+    about = "Lint a single commit message for conventional format"
+)]
 pub struct LintMessageCommand {
     /// Commit message to lint (use --file or stdin if omitted)
     #[structopt(long)]
@@ -57,7 +60,7 @@ impl Command for LintMessageCommand {
         } else {
             println!("❌ Found {} issue(s):", issues.len());
             for issue in &issues {
-                println!("- {}", issue);
+                println!("- {issue}");
             }
         }
 

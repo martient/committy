@@ -1,10 +1,10 @@
 include!(concat!(env!("OUT_DIR"), "/sentry_dsn.rs"));
 
+mod ai;
 mod cli;
 mod config;
 mod error;
 mod git;
-mod ai;
 mod input;
 mod linter;
 mod logger;

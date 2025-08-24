@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 use std::time::Duration;
+use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum LlmError {
@@ -9,7 +9,7 @@ pub enum LlmError {
     #[error("AI provider request failed: {0}")]
     RequestFailed(String),
     #[error("AI provider timeout")]
-    Timeout,
+    _Timeout,
     #[error("AI response parse error: {0}")]
     Parse(String),
 }
@@ -64,7 +64,10 @@ impl LlmClient for OpenRouterClient {
         let url = format!("{}/chat/completions", self.base_url.trim_end_matches('/'));
 
         #[derive(Serialize)]
-        struct Message<'a> { role: &'a str, content: &'a str }
+        struct Message<'a> {
+            role: &'a str,
+            content: &'a str,
+        }
         #[derive(Serialize)]
         struct RequestBody<'a> {
             model: &'a str,
@@ -76,13 +79,21 @@ impl LlmClient for OpenRouterClient {
         }
         let response_format = if json_mode {
             Some(serde_json::json!({"type": "json_object"}))
-        } else { None };
+        } else {
+            None
+        };
 
         let body = RequestBody {
             model: &self.model,
             messages: vec![
-                Message { role: "system", content: system_prompt },
-                Message { role: "user", content: user_prompt },
+                Message {
+                    role: "system",
+                    content: system_prompt,
+                },
+                Message {
+                    role: "user",
+                    content: user_prompt,
+                },
             ],
             max_tokens,
             temperature,
@@ -104,17 +115,21 @@ impl LlmClient for OpenRouterClient {
             .map_err(|e| LlmError::RequestFailed(e.to_string()))?;
 
         if !resp.status().is_success() {
-            return Err(LlmError::RequestFailed(format!(
-                "status {}", resp.status()
-            )));
+            return Err(LlmError::RequestFailed(format!("status {}", resp.status())));
         }
 
         #[derive(Deserialize)]
-        struct Choice { message: ChoiceMessage }
+        struct Choice {
+            message: ChoiceMessage,
+        }
         #[derive(Deserialize)]
-        struct ChoiceMessage { content: String }
+        struct ChoiceMessage {
+            content: String,
+        }
         #[derive(Deserialize)]
-        struct ResponseBody { choices: Vec<Choice> }
+        struct ResponseBody {
+            choices: Vec<Choice>,
+        }
 
         let rb: ResponseBody = resp
             .json()
@@ -122,7 +137,7 @@ impl LlmClient for OpenRouterClient {
             .map_err(|e| LlmError::Parse(e.to_string()))?;
         let content = rb
             .choices
-            .get(0)
+            .first()
             .ok_or_else(|| LlmError::Parse("no choices".into()))?
             .message
             .content
@@ -145,7 +160,10 @@ impl LlmClient for OllamaClient {
         let url = format!("{}/api/chat", self.base_url.trim_end_matches('/'));
 
         #[derive(Serialize)]
-        struct Message<'a> { role: &'a str, content: &'a str }
+        struct Message<'a> {
+            role: &'a str,
+            content: &'a str,
+        }
         #[derive(Serialize)]
         struct RequestBody<'a> {
             model: &'a str,
@@ -163,10 +181,20 @@ impl LlmClient for OllamaClient {
         let body = RequestBody {
             model: &self.model,
             messages: vec![
-                Message { role: "system", content: system_prompt },
-                Message { role: "user", content: user_prompt },
+                Message {
+                    role: "system",
+                    content: system_prompt,
+                },
+                Message {
+                    role: "user",
+                    content: user_prompt,
+                },
             ],
-            options: OllamaOptions { temperature, num_predict: max_tokens as i32, format: if json_mode { Some("json") } else { None } },
+            options: OllamaOptions {
+                temperature,
+                num_predict: max_tokens as i32,
+                format: if json_mode { Some("json") } else { None },
+            },
         };
 
         let client = reqwest::Client::builder()
@@ -183,15 +211,17 @@ impl LlmClient for OllamaClient {
             .map_err(|e| LlmError::RequestFailed(e.to_string()))?;
 
         if !resp.status().is_success() {
-            return Err(LlmError::RequestFailed(format!(
-                "status {}", resp.status()
-            )));
+            return Err(LlmError::RequestFailed(format!("status {}", resp.status())));
         }
 
         #[derive(Deserialize)]
-        struct ResponseMessage { content: String }
+        struct ResponseMessage {
+            content: String,
+        }
         #[derive(Deserialize)]
-        struct ResponseBody { message: ResponseMessage }
+        struct ResponseBody {
+            message: ResponseMessage,
+        }
 
         let rb: ResponseBody = resp
             .json()
@@ -209,4 +239,3 @@ pub struct AiCommitSuggestion {
     pub long: Option<String>,
     pub message: Option<String>,
 }
-

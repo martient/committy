@@ -11,7 +11,9 @@ fn lint_message_valid_text() {
         "--message",
         "feat: add nice thing",
     ]);
-    cmd.assert().success().stdout(predicate::str::contains("✅"));
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("✅"));
 }
 
 #[test]

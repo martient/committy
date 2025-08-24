@@ -1,6 +1,6 @@
 pub mod commands;
 
-use self::commands::{amend, branch, commit, lint, lint_message, tag, group_commit};
+use self::commands::{amend, branch, commit, group_commit, lint, lint_message, tag};
 use crate::error::CliError;
 use structopt::StructOpt;
 

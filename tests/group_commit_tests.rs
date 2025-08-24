@@ -169,7 +169,11 @@ fn test_group_commit_plan_json_offline() {
     assert_eq!(v["ok"], Value::Bool(true));
 
     let groups = v["groups"].as_array().expect("groups array");
-    assert!(groups.len() >= 2, "expected at least 2 groups, got {}", groups.len());
+    assert!(
+        groups.len() >= 2,
+        "expected at least 2 groups, got {}",
+        groups.len()
+    );
 
     // Ensure Docs and Code groups present
     let mut seen_docs = false;
@@ -179,15 +183,24 @@ fn test_group_commit_plan_json_offline() {
             seen_docs = true;
             // Check suggested message has expected type prefix
             let msg = g["suggested_message"].as_str().unwrap_or("");
-            assert!(msg.starts_with("docs:"), "docs message should start with 'docs:', got: {}", msg);
+            assert!(
+                msg.starts_with("docs:"),
+                "docs message should start with 'docs:', got: {msg}"
+            );
         }
         if g["name"] == Value::String("code".into()) {
             seen_code = true;
             let msg = g["suggested_message"].as_str().unwrap_or("");
-            assert!(msg.starts_with("chore:"), "code default type is 'chore:', got: {}", msg);
+            assert!(
+                msg.starts_with("chore:"),
+                "code default type is 'chore:', got: {msg}"
+            );
         }
     }
-    assert!(seen_docs && seen_code, "Docs and Code groups should be present");
+    assert!(
+        seen_docs && seen_code,
+        "Docs and Code groups should be present"
+    );
 }
 
 #[test]
@@ -226,11 +239,15 @@ fn test_group_commit_apply_auto_stage_creates_commits() {
     assert_eq!(v["ok"], Value::Bool(true));
 
     let commits = v["commits"].as_array().expect("commits array");
-    assert!(commits.len() >= 2, "expected at least 2 commits, got {}", commits.len());
+    assert!(
+        commits.len() >= 2,
+        "expected at least 2 commits, got {}",
+        commits.len()
+    );
     for c in commits {
         assert_eq!(c["ok"], Value::Bool(true));
         assert!(c["sha"].as_str().is_some(), "sha should be present");
-        assert!(c["message"].as_str().unwrap_or("").len() > 0);
+        assert!(!c["message"].as_str().unwrap_or("").is_empty());
     }
 
     // Verify git log has at least 2 new commits after init

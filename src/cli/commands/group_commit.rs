@@ -1,19 +1,27 @@
-use structopt::StructOpt;
-use serde::Serialize;
+use crate::ai::{AiCommitSuggestion, LlmClient, LlmError, OllamaClient, OpenRouterClient};
 use crate::cli::Command;
 use crate::error::CliError;
 use crate::git::format_commit_message;
 use crate::git::list_changed_files;
 use crate::linter::check_message_format;
-use crate::ai::{LlmClient, OpenRouterClient, OllamaClient, AiCommitSuggestion, LlmError};
+use git2::Repository;
+use serde::Serialize;
 use std::env;
 use std::fs;
 use std::process::Command as ProcCommand;
-use git2::Repository;
+use structopt::StructOpt;
 
 #[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "kebab-case")]
-pub enum GroupName { Docs, Tests, Ci, Deps, Build, Chore, Code }
+pub enum GroupName {
+    Docs,
+    Tests,
+    Ci,
+    Deps,
+    Build,
+    Chore,
+    Code,
+}
 
 #[derive(Debug, Serialize, Clone)]
 pub struct PlanGroup {
@@ -125,7 +133,7 @@ pub struct GroupCommitCommand {
 
     /// Diff lines per file sent to AI
     #[structopt(long = "ai-diff-lines-per-file", default_value = "80")]
-    ai_diff_lines_per_file: usize,
+    _ai_diff_lines_per_file: usize,
 
     /// Allow sending sensitive content to external AI providers
     #[structopt(long = "ai-allow-sensitive")]
@@ -152,7 +160,7 @@ impl Default for GroupCommitCommand {
             ai_system_prompt: None,
             ai_system_prompt_file: None,
             ai_file_limit: 20,
-            ai_diff_lines_per_file: 80,
+            _ai_diff_lines_per_file: 80,
             ai_allow_sensitive: false,
         }
     }
@@ -161,25 +169,59 @@ impl Default for GroupCommitCommand {
 fn classify_file(file: &str) -> GroupName {
     let f = file.trim_start_matches("./");
     // CI
-    if f.starts_with(".github/") { return GroupName::Ci; }
+    if f.starts_with(".github/") {
+        return GroupName::Ci;
+    }
     // Docs
-    if f.starts_with("docs/") || f.ends_with("README.md") || f.ends_with("README.MD") || f.ends_with(".md") || f.ends_with(".MD") || f.ends_with(".mdx") || f.ends_with(".MDX") {
+    if f.starts_with("docs/")
+        || f.ends_with("README.md")
+        || f.ends_with("README.MD")
+        || f.ends_with(".md")
+        || f.ends_with(".MD")
+        || f.ends_with(".mdx")
+        || f.ends_with(".MDX")
+    {
         return GroupName::Docs;
     }
     // Tests
-    if f.starts_with("tests/") || f.ends_with("_test.rs") || f.ends_with(".test.js") || f.ends_with(".test.ts") || f.ends_with(".spec.js") || f.ends_with(".spec.ts") {
+    if f.starts_with("tests/")
+        || f.ends_with("_test.rs")
+        || f.ends_with(".test.js")
+        || f.ends_with(".test.ts")
+        || f.ends_with(".spec.js")
+        || f.ends_with(".spec.ts")
+    {
         return GroupName::Tests;
     }
     // Deps (lockfiles)
-    if f.ends_with("package-lock.json") || f.ends_with("npm-shrinkwrap.json") || f.ends_with("pnpm-lock.yaml") || f.ends_with("yarn.lock") || f.ends_with("Cargo.lock") {
+    if f.ends_with("package-lock.json")
+        || f.ends_with("npm-shrinkwrap.json")
+        || f.ends_with("pnpm-lock.yaml")
+        || f.ends_with("yarn.lock")
+        || f.ends_with("Cargo.lock")
+    {
         return GroupName::Deps;
     }
     // Build/config
-    if f.ends_with("Cargo.toml") || f.ends_with("build.rs") || f.ends_with("package.json") || f.ends_with("tsconfig.json") || f.contains("eslint.") || f.ends_with(".eslintrc") || f.contains("vite.config") || f.ends_with("rollup.config.js") || f.ends_with("rollup.config.cjs") || f.ends_with("rollup.config.mjs") {
+    if f.ends_with("Cargo.toml")
+        || f.ends_with("build.rs")
+        || f.ends_with("package.json")
+        || f.ends_with("tsconfig.json")
+        || f.contains("eslint.")
+        || f.ends_with(".eslintrc")
+        || f.contains("vite.config")
+        || f.ends_with("rollup.config.js")
+        || f.ends_with("rollup.config.cjs")
+        || f.ends_with("rollup.config.mjs")
+    {
         return GroupName::Build;
     }
     // Chore (editor/config meta)
-    if f.starts_with(".vscode/") || f.ends_with(".editorconfig") || f.ends_with(".gitignore") || f.ends_with(".npmrc") {
+    if f.starts_with(".vscode/")
+        || f.ends_with(".editorconfig")
+        || f.ends_with(".gitignore")
+        || f.ends_with(".npmrc")
+    {
         return GroupName::Chore;
     }
     // Everything else
@@ -222,7 +264,11 @@ fn group_name_str(name: GroupName) -> &'static str {
     }
 }
 
-fn build_message_from_suggestion(s: &AiCommitSuggestion, fallback_type: &str, fallback_short: &str) -> String {
+fn build_message_from_suggestion(
+    s: &AiCommitSuggestion,
+    fallback_type: &str,
+    fallback_short: &str,
+) -> String {
     if let Some(msg) = &s.message {
         return msg.trim().to_string();
     }
@@ -287,7 +333,7 @@ impl Command for GroupCommitCommand {
                         if let Ok(fp) = fs::read_to_string(path) {
                             system_prompt = fp;
                         } else {
-                            errors.push(format!("failed to read ai_system_prompt_file: {}", path));
+                            errors.push(format!("failed to read ai_system_prompt_file: {path}"));
                         }
                     }
 
@@ -298,12 +344,20 @@ impl Command for GroupCommitCommand {
                     let timeout_ms = self.ai_timeout_ms;
 
                     let provider = self.ai_provider.as_str();
-                    let runtime = tokio::runtime::Runtime::new().map_err(|e| CliError::Generic(e.to_string()))?;
+                    let runtime = tokio::runtime::Runtime::new()
+                        .map_err(|e| CliError::Generic(e.to_string()))?;
 
                     for g in groups.iter_mut() {
                         let files_preview: Vec<String> = if self.ai_allow_sensitive {
-                            let mut v = g.files.iter().take(self.ai_file_limit).cloned().collect::<Vec<_>>();
-                            if g.files.len() > self.ai_file_limit { v.push("...".to_string()); }
+                            let mut v = g
+                                .files
+                                .iter()
+                                .take(self.ai_file_limit)
+                                .cloned()
+                                .collect::<Vec<_>>();
+                            if g.files.len() > self.ai_file_limit {
+                                v.push("...".to_string());
+                            }
                             v
                         } else {
                             vec![]
@@ -328,21 +382,54 @@ impl Command for GroupCommitCommand {
                         // Prepare client per provider
                         let result: Result<String, LlmError> = match provider {
                             "openrouter" => {
-                                let base = self.ai_base_url.clone().unwrap_or_else(|| "https://openrouter.ai/api/v1".to_string());
-                                let model = self.ai_model.clone().unwrap_or_else(|| "openrouter/auto".to_string());
+                                let base = self
+                                    .ai_base_url
+                                    .clone()
+                                    .unwrap_or_else(|| "https://openrouter.ai/api/v1".to_string());
+                                let model = self
+                                    .ai_model
+                                    .clone()
+                                    .unwrap_or_else(|| "openrouter/auto".to_string());
                                 let key_env = self.ai_api_key_env.clone();
                                 let api_key = env::var(key_env).ok();
-                                let client = OpenRouterClient { base_url: base, api_key, model };
-                                runtime.block_on(client.suggest_commit(&system_prompt, &user_prompt, json_mode, max_tokens, temperature, timeout_ms))
+                                let client = OpenRouterClient {
+                                    base_url: base,
+                                    api_key,
+                                    model,
+                                };
+                                runtime.block_on(client.suggest_commit(
+                                    &system_prompt,
+                                    &user_prompt,
+                                    json_mode,
+                                    max_tokens,
+                                    temperature,
+                                    timeout_ms,
+                                ))
                             }
                             "ollama" => {
-                                let base = self.ai_base_url.clone().unwrap_or_else(|| "http://localhost:11434".to_string());
-                                let model = self.ai_model.clone().unwrap_or_else(|| "llama3.2".to_string());
-                                let client = OllamaClient { base_url: base, model };
-                                runtime.block_on(client.suggest_commit(&system_prompt, &user_prompt, json_mode, max_tokens, temperature, timeout_ms))
+                                let base = self
+                                    .ai_base_url
+                                    .clone()
+                                    .unwrap_or_else(|| "http://localhost:11434".to_string());
+                                let model = self
+                                    .ai_model
+                                    .clone()
+                                    .unwrap_or_else(|| "llama3.2".to_string());
+                                let client = OllamaClient {
+                                    base_url: base,
+                                    model,
+                                };
+                                runtime.block_on(client.suggest_commit(
+                                    &system_prompt,
+                                    &user_prompt,
+                                    json_mode,
+                                    max_tokens,
+                                    temperature,
+                                    timeout_ms,
+                                ))
                             }
                             other => {
-                                errors.push(format!("unknown ai provider: {}", other));
+                                errors.push(format!("unknown ai provider: {other}"));
                                 continue;
                             }
                         };
@@ -351,32 +438,50 @@ impl Command for GroupCommitCommand {
                             Ok(text) => {
                                 let candidate = if json_mode {
                                     match serde_json::from_str::<AiCommitSuggestion>(text.trim()) {
-                                        Ok(sug) => build_message_from_suggestion(&sug, &g.commit_type, default_short_for(&g.name)),
+                                        Ok(sug) => build_message_from_suggestion(
+                                            &sug,
+                                            &g.commit_type,
+                                            default_short_for(&g.name),
+                                        ),
                                         Err(e) => {
-                                            errors.push(format!("AI JSON parse failed: {}", e));
+                                            errors.push(format!("AI JSON parse failed: {e}"));
                                             g.suggested_message.clone()
                                         }
                                     }
                                 } else {
                                     // Treat the first non-empty line as the commit header
-                                    text.lines().find(|l| !l.trim().is_empty()).unwrap_or(g.suggested_message.as_str()).trim().to_string()
+                                    text.lines()
+                                        .find(|l| !l.trim().is_empty())
+                                        .unwrap_or(g.suggested_message.as_str())
+                                        .trim()
+                                        .to_string()
                                 };
                                 // Lint and fallback
                                 let issues = check_message_format(&candidate);
                                 if issues.is_empty() {
                                     g.suggested_message = candidate;
                                 } else {
-                                    errors.push(format!("AI suggestion failed lint: {:?}", issues));
+                                    errors.push(format!("AI suggestion failed lint: {issues:?}"));
                                 }
                             }
                             Err(e) => {
-                                errors.push(format!("AI error: {}", e));
+                                errors.push(format!("AI error: {e}"));
                             }
                         }
                     }
                 }
 
-                let res = GroupCommitPlanResult { command: "group-commit".into(), mode: "plan".into(), ok: true, groups, errors: if errors.is_empty() { None } else { Some(errors) } };
+                let res = GroupCommitPlanResult {
+                    command: "group-commit".into(),
+                    mode: "plan".into(),
+                    ok: true,
+                    groups,
+                    errors: if errors.is_empty() {
+                        None
+                    } else {
+                        Some(errors)
+                    },
+                };
                 if self.output == "json" {
                     println!("{}", serde_json::to_string(&res).unwrap());
                 } else {
@@ -401,16 +506,25 @@ impl Command for GroupCommitCommand {
 
                 for f in files {
                     let g = classify_file(&f);
-                    if let Some(v) = by_group.get_mut(&g) { v.push(f); }
+                    if let Some(v) = by_group.get_mut(&g) {
+                        v.push(f);
+                    }
                 }
 
                 let mut groups: Vec<PlanGroup> = Vec::new();
                 for (name, files) in by_group.into_iter() {
-                    if files.is_empty() { continue; }
+                    if files.is_empty() {
+                        continue;
+                    }
                     let commit_type = default_type_for(&name).to_string();
                     let short = default_short_for(&name).to_string();
                     let message = format_commit_message(&commit_type, false, "", &short, "");
-                    groups.push(PlanGroup { name, commit_type, files, suggested_message: message });
+                    groups.push(PlanGroup {
+                        name,
+                        commit_type,
+                        files,
+                        suggested_message: message,
+                    });
                 }
 
                 let mut errors: Vec<String> = Vec::new();
@@ -425,7 +539,11 @@ impl Command for GroupCommitCommand {
                             "You are a commit message assistant. Generate conventional commit messages. Prefer JSON if requested.\nReturn an object {\"commit_type\", \"short\", \"scope\", \"long\", \"message\"}. If 'message' is present, it should be a full commit message with the first line formatted as '<type>(<scope>): <short>' (scope optional).".to_string()
                         });
                     if let Some(path) = &self.ai_system_prompt_file {
-                        if let Ok(fp) = fs::read_to_string(path) { system_prompt = fp; } else { errors.push(format!("failed to read ai_system_prompt_file: {}", path)); }
+                        if let Ok(fp) = fs::read_to_string(path) {
+                            system_prompt = fp;
+                        } else {
+                            errors.push(format!("failed to read ai_system_prompt_file: {path}"));
+                        }
                     }
 
                     let json_mode = !self.no_ai_json_mode;
@@ -433,14 +551,24 @@ impl Command for GroupCommitCommand {
                     let temperature = self.ai_temperature;
                     let timeout_ms = self.ai_timeout_ms;
                     let provider = self.ai_provider.as_str();
-                    let runtime = tokio::runtime::Runtime::new().map_err(|e| CliError::Generic(e.to_string()))?;
+                    let runtime = tokio::runtime::Runtime::new()
+                        .map_err(|e| CliError::Generic(e.to_string()))?;
 
                     for g in groups.iter_mut() {
                         let files_preview: Vec<String> = if self.ai_allow_sensitive {
-                            let mut v = g.files.iter().take(self.ai_file_limit).cloned().collect::<Vec<_>>();
-                            if g.files.len() > self.ai_file_limit { v.push("...".to_string()); }
+                            let mut v = g
+                                .files
+                                .iter()
+                                .take(self.ai_file_limit)
+                                .cloned()
+                                .collect::<Vec<_>>();
+                            if g.files.len() > self.ai_file_limit {
+                                v.push("...".to_string());
+                            }
                             v
-                        } else { vec![] };
+                        } else {
+                            vec![]
+                        };
 
                         let user_prompt = if self.ai_allow_sensitive {
                             format!(
@@ -456,36 +584,89 @@ impl Command for GroupCommitCommand {
 
                         let result: Result<String, LlmError> = match provider {
                             "openrouter" => {
-                                let base = self.ai_base_url.clone().unwrap_or_else(|| "https://openrouter.ai/api/v1".to_string());
-                                let model = self.ai_model.clone().unwrap_or_else(|| "openrouter/auto".to_string());
+                                let base = self
+                                    .ai_base_url
+                                    .clone()
+                                    .unwrap_or_else(|| "https://openrouter.ai/api/v1".to_string());
+                                let model = self
+                                    .ai_model
+                                    .clone()
+                                    .unwrap_or_else(|| "openrouter/auto".to_string());
                                 let key_env = self.ai_api_key_env.clone();
                                 let api_key = env::var(key_env).ok();
-                                let client = OpenRouterClient { base_url: base, api_key, model };
-                                runtime.block_on(client.suggest_commit(&system_prompt, &user_prompt, json_mode, max_tokens, temperature, timeout_ms))
+                                let client = OpenRouterClient {
+                                    base_url: base,
+                                    api_key,
+                                    model,
+                                };
+                                runtime.block_on(client.suggest_commit(
+                                    &system_prompt,
+                                    &user_prompt,
+                                    json_mode,
+                                    max_tokens,
+                                    temperature,
+                                    timeout_ms,
+                                ))
                             }
                             "ollama" => {
-                                let base = self.ai_base_url.clone().unwrap_or_else(|| "http://localhost:11434".to_string());
-                                let model = self.ai_model.clone().unwrap_or_else(|| "llama3.2".to_string());
-                                let client = OllamaClient { base_url: base, model };
-                                runtime.block_on(client.suggest_commit(&system_prompt, &user_prompt, json_mode, max_tokens, temperature, timeout_ms))
+                                let base = self
+                                    .ai_base_url
+                                    .clone()
+                                    .unwrap_or_else(|| "http://localhost:11434".to_string());
+                                let model = self
+                                    .ai_model
+                                    .clone()
+                                    .unwrap_or_else(|| "llama3.2".to_string());
+                                let client = OllamaClient {
+                                    base_url: base,
+                                    model,
+                                };
+                                runtime.block_on(client.suggest_commit(
+                                    &system_prompt,
+                                    &user_prompt,
+                                    json_mode,
+                                    max_tokens,
+                                    temperature,
+                                    timeout_ms,
+                                ))
                             }
-                            other => { errors.push(format!("unknown ai provider: {}", other)); continue; }
+                            other => {
+                                errors.push(format!("unknown ai provider: {other}"));
+                                continue;
+                            }
                         };
 
                         match result {
                             Ok(text) => {
                                 let candidate = if json_mode {
                                     match serde_json::from_str::<AiCommitSuggestion>(text.trim()) {
-                                        Ok(sug) => build_message_from_suggestion(&sug, &g.commit_type, default_short_for(&g.name)),
-                                        Err(e) => { errors.push(format!("AI JSON parse failed: {}", e)); g.suggested_message.clone() }
+                                        Ok(sug) => build_message_from_suggestion(
+                                            &sug,
+                                            &g.commit_type,
+                                            default_short_for(&g.name),
+                                        ),
+                                        Err(e) => {
+                                            errors.push(format!("AI JSON parse failed: {e}"));
+                                            g.suggested_message.clone()
+                                        }
                                     }
                                 } else {
-                                    text.lines().find(|l| !l.trim().is_empty()).unwrap_or(g.suggested_message.as_str()).trim().to_string()
+                                    text.lines()
+                                        .find(|l| !l.trim().is_empty())
+                                        .unwrap_or(g.suggested_message.as_str())
+                                        .trim()
+                                        .to_string()
                                 };
                                 let issues = check_message_format(&candidate);
-                                if issues.is_empty() { g.suggested_message = candidate; } else { errors.push(format!("AI suggestion failed lint: {:?}", issues)); }
+                                if issues.is_empty() {
+                                    g.suggested_message = candidate;
+                                } else {
+                                    errors.push(format!("AI suggestion failed lint: {issues:?}"));
+                                }
                             }
-                            Err(e) => { errors.push(format!("AI error: {}", e)); }
+                            Err(e) => {
+                                errors.push(format!("AI error: {e}"));
+                            }
                         }
                     }
                 }
@@ -494,14 +675,26 @@ impl Command for GroupCommitCommand {
                 fn run_git(args: &[&str]) -> Result<(), CliError> {
                     let mut cmd = ProcCommand::new("git");
                     cmd.args(args);
-                    let status = cmd.stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status().map_err(|e| CliError::Generic(e.to_string()))?;
-                    if status.success() { Ok(()) } else { Err(CliError::Generic(format!("git {:?} failed with status {:?}", args, status))) }
+                    let status = cmd
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
+                        .status()
+                        .map_err(|e| CliError::Generic(e.to_string()))?;
+                    if status.success() {
+                        Ok(())
+                    } else {
+                        Err(CliError::Generic(format!(
+                            "git {args:?} failed with status {status:?}"
+                        )))
+                    }
                 }
 
                 fn last_commit_sha() -> Option<String> {
                     if let Ok(repo) = Repository::discover(std::env::current_dir().ok()?) {
                         if let Ok(head) = repo.head() {
-                            if let Ok(commit) = head.peel_to_commit() { return Some(commit.id().to_string()); }
+                            if let Ok(commit) = head.peel_to_commit() {
+                                return Some(commit.id().to_string());
+                            }
                         }
                     }
                     None
@@ -524,22 +717,60 @@ impl Command for GroupCommitCommand {
                     // Stage only this group's files if requested
                     if self.auto_stage {
                         // Unstage everything back to HEAD, then stage only the group's files
-                        if let Err(e) = run_git(&["reset", "-q", "HEAD", "--"]) { errors.push(format!("git reset failed before staging {}: {}", group_name_str(g.name), e)); }
+                        if let Err(e) = run_git(&["reset", "-q", "HEAD", "--"]) {
+                            errors.push(format!(
+                                "git reset failed before staging {}: {}",
+                                group_name_str(g.name),
+                                e
+                            ));
+                        }
                         // Add files
                         let mut args: Vec<&str> = vec!["add", "--"];
-                        for f in &g.files { args.push(f.as_str()); }
-                        if let Err(e) = run_git(&args) { errors.push(format!("git add failed for group {}: {}", group_name_str(g.name), e)); commits.push(CommitRecord { group: g.name, message: final_msg.clone(), ok: false, sha: None, error: Some("failed to stage files".into()) }); continue; }
+                        for f in &g.files {
+                            args.push(f.as_str());
+                        }
+                        if let Err(e) = run_git(&args) {
+                            errors.push(format!(
+                                "git add failed for group {}: {}",
+                                group_name_str(g.name),
+                                e
+                            ));
+                            commits.push(CommitRecord {
+                                group: g.name,
+                                message: final_msg.clone(),
+                                ok: false,
+                                sha: None,
+                                error: Some("failed to stage files".into()),
+                            });
+                            continue;
+                        }
                     }
 
                     // Create commit
                     match crate::git::commit_changes(&final_msg, false) {
                         Ok(_) => {
                             let sha = last_commit_sha();
-                            commits.push(CommitRecord { group: g.name, message: final_msg.clone(), ok: true, sha, error: None });
+                            commits.push(CommitRecord {
+                                group: g.name,
+                                message: final_msg.clone(),
+                                ok: true,
+                                sha,
+                                error: None,
+                            });
                         }
                         Err(e) => {
-                            errors.push(format!("commit failed for group {}: {}", group_name_str(g.name), e));
-                            commits.push(CommitRecord { group: g.name, message: final_msg.clone(), ok: false, sha: None, error: Some(e.to_string()) });
+                            errors.push(format!(
+                                "commit failed for group {}: {}",
+                                group_name_str(g.name),
+                                e
+                            ));
+                            commits.push(CommitRecord {
+                                group: g.name,
+                                message: final_msg.clone(),
+                                ok: false,
+                                sha: None,
+                                error: Some(e.to_string()),
+                            });
                         }
                     }
                 }
@@ -551,8 +782,24 @@ impl Command for GroupCommitCommand {
                 }
 
                 let ok = commits.iter().all(|c| c.ok);
-                let res = GroupCommitApplyResult { command: "group-commit".into(), mode: "apply".into(), ok, groups: groups.clone(), commits, pushed, errors: if errors.is_empty() { None } else { Some(errors) } };
-                if self.output == "json" { println!("{}", serde_json::to_string(&res).unwrap()); } else { println!("Applied group commits"); }
+                let res = GroupCommitApplyResult {
+                    command: "group-commit".into(),
+                    mode: "apply".into(),
+                    ok,
+                    groups: groups.clone(),
+                    commits,
+                    pushed,
+                    errors: if errors.is_empty() {
+                        None
+                    } else {
+                        Some(errors)
+                    },
+                };
+                if self.output == "json" {
+                    println!("{}", serde_json::to_string(&res).unwrap());
+                } else {
+                    println!("Applied group commits");
+                }
                 Ok(())
             }
             _ => Err(CliError::Generic("invalid mode".into())),
