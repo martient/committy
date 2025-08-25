@@ -92,10 +92,7 @@ impl Command for TagCommand {
                 });
                 println!("{}", serde_json::to_string(&payload).unwrap());
             } else {
-                println!(
-                    "Tag {} created successfully!",
-                    version_manager.new_tag
-                );
+                println!("Tag {} created successfully!", version_manager.new_tag);
             }
             if let Err(e) =
                 tokio::runtime::Runtime::new()
