@@ -160,17 +160,23 @@ fn run(config: &mut Config) -> Result<()> {
             .with_prerelease(opt.pre_release)
             .with_non_interactive(non_interactive);
 
-        if let Ok(Some(release)) = updater.check_update() {
-            logger::info(&format!("New version {} is available!", release.version));
-
-            if opt.update && (updater.check_and_prompt_update()).is_ok() {
+        match updater.check_update() {
+            Ok(Some(release)) => {
+                logger::info(&format!("New version {} is available!", release.version));
+                if opt.update {
+                    // Auto-apply the update when --update is passed
+                    updater.update_to_version(&release.version)?;
+                    config.last_update_check = current_time;
+                    config_updated = true;
+                }
+            }
+            Ok(None) => {
+                // No update available (covers both --check-update and --update)
+                logger::info("You're running the latest version!");
                 config.last_update_check = current_time;
                 config_updated = true;
             }
-        } else if opt.check_update {
-            logger::info("You're running the latest version!");
-            config.last_update_check = current_time;
-            config_updated = true;
+            Err(e) => return Err(e.into()),
         }
     }
 
@@ -194,8 +200,16 @@ fn run(config: &mut Config) -> Result<()> {
         config.save()?;
     }
 
+    // If no subcommand is provided and we're only handling update-related flags,
+    // exit early to avoid falling through to the default commit flow.
+    if opt.cmd.is_none() && (opt.check_update || opt.update) {
+        return Ok(());
+    }
+
     // Check for staged changes before starting the interactive CLI
-    if opt.cmd.is_none() {
+    // Skip this preflight when running only top-level maintenance flags
+    // like --check-update or --update with no subcommand.
+    if opt.cmd.is_none() && !opt.check_update && !opt.update {
         if let Err(e) = git::has_staged_changes() {
             return Err(e.into());
         }
