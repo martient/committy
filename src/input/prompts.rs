@@ -113,7 +113,7 @@ pub fn input_subject() -> Result<String, CliError> {
             "Non-interactive environment: cannot input subject".to_string(),
         ));
     }
-    let subject = Text::new("Enter the subject")
+    let subject = Text::new("Enter the subject:")
         .prompt()
         .map_err(|e| CliError::InputError(e.to_string()))?;
     if subject.is_empty() {
@@ -124,9 +124,8 @@ pub fn input_subject() -> Result<String, CliError> {
 }
 
 pub fn validate_scope_input(scope: &str) -> Result<String, CliError> {
-    // First validate the scope
-    validate_scope(scope).map_err(CliError::InputError)?;
-
+    // Compute a suggested correction but do not fail early on validation errors.
+    // This ensures interactive users can choose to apply the correction.
     let corrected = auto_correct_scope(scope);
     if corrected != scope {
         info!("Suggested correction: '{scope}' -> '{corrected}'");
@@ -144,10 +143,17 @@ pub fn validate_scope_input(scope: &str) -> Result<String, CliError> {
             Ok(corrected)
         } else {
             info!("Keeping original: '{scope}'");
-            Ok(scope.to_string())
+            // If the original value does not pass validation, return a friendly error
+            match validate_scope(scope) {
+                Ok(_) => Ok(scope.to_string()),
+                Err(msg) => Err(CliError::InputError(msg)),
+            }
         }
     } else {
-        Ok(scope.to_string())
+        // No correction needed; still validate to ensure it meets constraints
+        validate_scope(scope)
+            .map(|_| scope.to_string())
+            .map_err(CliError::InputError)
     }
 }
 

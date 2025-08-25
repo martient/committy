@@ -19,7 +19,7 @@ pub struct TagCommand {
     validate: bool,
 
     #[structopt(
-        short = "bfs",
+        short = "b",
         long = "bump-files",
         help = "Want to auto bump the config to the new version (y/N)"
     )]
@@ -91,6 +91,11 @@ impl Command for TagCommand {
                     "pre_release": version_manager.is_pre_release,
                 });
                 println!("{}", serde_json::to_string(&payload).unwrap());
+            } else {
+                println!(
+                    "Tag {} created successfully!",
+                    version_manager.new_tag
+                );
             }
             if let Err(e) =
                 tokio::runtime::Runtime::new()
