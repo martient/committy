@@ -10,6 +10,7 @@ mod linter;
 mod logger;
 mod release;
 mod telemetry;
+mod tui;
 mod update;
 mod version;
 
