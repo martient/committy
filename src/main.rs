@@ -176,7 +176,7 @@ fn run(config: &mut Config) -> Result<()> {
                 config.last_update_check = current_time;
                 config_updated = true;
             }
-            Err(e) => return Err(e.into()),
+            Err(e) => return Err(e),
         }
     }
 

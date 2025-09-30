@@ -36,7 +36,8 @@ fn setup_repo_with_commits(
 
     // Create and checkout the specified branch
     let initial_commit_obj = repo.find_commit(initial_commit).unwrap();
-    repo.branch(branch_name, &initial_commit_obj, false).unwrap();
+    repo.branch(branch_name, &initial_commit_obj, false)
+        .unwrap();
     repo.set_head(&format!("refs/heads/{}", branch_name))
         .unwrap();
 
@@ -177,7 +178,9 @@ fn test_beta_with_breaking_change_increments_counter() {
     let file_path = dir.path().join("breaking.txt");
     fs::write(&file_path, "breaking change").unwrap();
     let mut index = repo.index().unwrap();
-    index.add_path(std::path::Path::new("breaking.txt")).unwrap();
+    index
+        .add_path(std::path::Path::new("breaking.txt"))
+        .unwrap();
     index.write().unwrap();
     let tree_id = index.write_tree().unwrap();
     let tree = repo.find_tree(tree_id).unwrap();

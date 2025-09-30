@@ -348,7 +348,9 @@ impl TagGenerator {
 
                 // Check if there are any commits - if not, no new tag needed
                 if log.trim().is_empty() {
-                    return Err(CliError::Generic("No new commits since last pre-release tag".to_string()));
+                    return Err(CliError::Generic(
+                        "No new commits since last pre-release tag".to_string(),
+                    ));
                 }
 
                 // Just increment the pre-release counter
