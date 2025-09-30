@@ -326,7 +326,8 @@ impl TagGenerator {
             "Calculating new tag. Current tag: {tag}, Pre-release tag: {pre_tag}, Is pre-release: {pre_release}"
         );
         use semver::Version as SemverVersion;
-        let (base_tag, _base_is_pre) = if pre_release {
+
+        if pre_release {
             // Parse both tags
             let reg_ver = SemverVersion::parse(tag.trim_start_matches('v'))
                 .unwrap_or_else(|_| SemverVersion::new(0, 0, 0));
@@ -338,39 +339,55 @@ impl TagGenerator {
                     .unwrap_or(""),
             )
             .unwrap_or_else(|_| SemverVersion::new(0, 0, 0));
-            // If pre_tag is a higher version, use it as base
+
+            // If pre_tag version is higher than regular tag, we're already on a pre-release
+            // In this case, only increment the pre-release counter, don't apply bump
             if pre_ver > reg_ver {
-                (pre_tag, true)
-            } else {
-                (tag, false)
+                debug!("Pre-release tag {pre_tag} is ahead of regular tag {tag}, incrementing pre-release counter only");
+                let log = self.get_commit_log(repo, pre_tag)?;
+
+                // Check if there are any commits - if not, no new tag needed
+                if log.trim().is_empty() {
+                    return Err(CliError::Generic("No new commits since last pre-release tag".to_string()));
+                }
+
+                // Just increment the pre-release counter
+                let new_tag = self.calculate_pre_release_tag(&pre_ver, pre_tag);
+                return Ok(if !self.not_with_v {
+                    format!("v{new_tag}")
+                } else {
+                    new_tag
+                });
             }
-        } else {
-            (tag, false)
-        };
 
-        let log = self.get_commit_log(repo, base_tag)?;
-        let bump: &str = self.determine_bump(&log)?;
-        let mut new_version = SemverVersion::parse(
-            base_tag
-                .trim_start_matches('v')
-                .split('-')
-                .next()
-                .unwrap_or(""),
-        )
-        .map_err(|e| CliError::SemVerError(e.to_string()))?;
-        self.apply_bump(&mut new_version, bump);
+            // Pre-release is not ahead, apply bump from regular tag
+            debug!("Starting new pre-release from regular tag {tag}");
+            let log = self.get_commit_log(repo, tag)?;
+            let bump: &str = self.determine_bump(&log)?;
+            let mut new_version = SemverVersion::parse(tag.trim_start_matches('v'))
+                .map_err(|e| CliError::SemVerError(e.to_string()))?;
+            self.apply_bump(&mut new_version, bump);
 
-        let new_tag = if pre_release {
-            self.calculate_pre_release_tag(&new_version, pre_tag)
+            let new_tag = self.calculate_pre_release_tag(&new_version, pre_tag);
+            Ok(if !self.not_with_v {
+                format!("v{new_tag}")
+            } else {
+                new_tag
+            })
         } else {
-            new_version.to_string()
-        };
+            // Regular release
+            let log = self.get_commit_log(repo, tag)?;
+            let bump: &str = self.determine_bump(&log)?;
+            let mut new_version = SemverVersion::parse(tag.trim_start_matches('v'))
+                .map_err(|e| CliError::SemVerError(e.to_string()))?;
+            self.apply_bump(&mut new_version, bump);
 
-        Ok(if !self.not_with_v {
-            format!("v{new_tag}")
-        } else {
-            new_tag
-        })
+            Ok(if !self.not_with_v {
+                format!("v{}", new_version)
+            } else {
+                new_version.to_string()
+            })
+        }
     }
 
     fn determine_bump(&self, log: &str) -> Result<&str, CliError> {
@@ -636,5 +653,93 @@ impl TagGenerator {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use git2::{Repository, Signature};
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_calculate_new_tag_prefers_highest_version() {
+        let dir = tempdir().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let signature = Signature::now("Test User", "test@example.com").unwrap();
+        // Initial commit
+        let tree_id = {
+            let mut index = repo.index().unwrap();
+            index.write_tree().unwrap()
+        };
+        let tree = repo.find_tree(tree_id).unwrap();
+        repo.commit(
+            Some("HEAD"),
+            &signature,
+            &signature,
+            "Initial commit",
+            &tree,
+            &[],
+        )
+        .unwrap();
+        // Tag v8.3.2 (regular)
+        repo.tag(
+            "v8.3.2",
+            &repo.head().unwrap().peel_to_commit().unwrap().as_object(),
+            &signature,
+            "Regular release",
+            false,
+        )
+        .unwrap();
+        // Tag v10.0.0-beta.1 (pre-release)
+        repo.tag(
+            "v10.0.0-beta.1",
+            &repo.head().unwrap().peel_to_commit().unwrap().as_object(),
+            &signature,
+            "Pre-release",
+            false,
+        )
+        .unwrap();
+
+        // Add a commit after the tags
+        let mut index = repo.index().unwrap();
+        let tree_id = index.write_tree().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+        let parent = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.commit(
+            Some("HEAD"),
+            &signature,
+            &signature,
+            "chore: another commit",
+            &tree,
+            &[&parent],
+        )
+        .unwrap();
+
+        let opts = TagGeneratorOptions {
+            default_bump: "minor".to_string(),
+            not_with_v: false,
+            release_branches: "main,master".to_string(),
+            source: ".".to_string(),
+            dry_run: true,
+            initial_version: "0.0.0".to_string(),
+            prerelease: true,
+            prerelease_suffix: "beta".to_string(),
+            none_string_token: "#none".to_string(),
+            force_without_change: false,
+            tag_message: None,
+            not_publish: true,
+            fetch: false,
+            no_fetch: true,
+        };
+        let gen = TagGenerator::new(opts, false);
+        let (tag, pre_tag) = gen.get_latest_tags(&repo).unwrap();
+        let new_tag = gen.calculate_new_tag(&repo, &tag, &pre_tag, true).unwrap();
+        // Should continue from v10.0.0-beta.1, producing v10.0.0-beta.2
+        assert!(
+            new_tag.contains("v10.0.0-beta.2"),
+            "new_tag was: {}",
+            new_tag
+        );
     }
 }
