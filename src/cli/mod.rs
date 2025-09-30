@@ -1,6 +1,6 @@
 pub mod commands;
 
-use self::commands::{amend, branch, commit, group_commit, lint, lint_message, tag};
+use self::commands::{amend, branch, commit, group_commit, lint, lint_message, tag, tui};
 use crate::error::CliError;
 use structopt::StructOpt;
 
@@ -24,6 +24,8 @@ pub enum CliCommand {
     Branch(branch::BranchCommand),
     #[structopt(about = "Group changes and optionally commit/apply them (with optional AI)")]
     GroupCommit(group_commit::GroupCommitCommand),
+    #[structopt(about = "Interactive TUI for staging and committing changes")]
+    Tui(tui::TuiCommand),
 }
 
 impl CliCommand {
@@ -36,6 +38,7 @@ impl CliCommand {
             CliCommand::LintMessage(cmd) => cmd.execute(non_interactive),
             CliCommand::Branch(cmd) => cmd.execute(non_interactive),
             CliCommand::GroupCommit(cmd) => cmd.execute(non_interactive),
+            CliCommand::Tui(cmd) => cmd.execute(non_interactive),
         }
     }
 }
