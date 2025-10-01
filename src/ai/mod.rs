@@ -27,12 +27,12 @@ pub trait LlmClient: Send + Sync {
     ) -> Result<String, LlmError>;
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum LlmProvider {
-    OpenRouter,
-    Ollama,
-}
+// #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+// #[serde(rename_all = "kebab-case")]
+// pub enum LlmProvider {
+//     OpenRouter,
+//     Ollama,
+// }
 
 pub struct OpenRouterClient {
     pub base_url: String,

@@ -378,17 +378,43 @@ impl TagGenerator {
             })
         } else {
             // Regular release
-            let log = self.get_commit_log(repo, tag)?;
-            let bump: &str = self.determine_bump(&log)?;
-            let mut new_version = SemverVersion::parse(tag.trim_start_matches('v'))
-                .map_err(|e| CliError::SemVerError(e.to_string()))?;
-            self.apply_bump(&mut new_version, bump);
+            // Parse both tags to compare versions
+            let reg_ver = SemverVersion::parse(tag.trim_start_matches('v'))
+                .unwrap_or_else(|_| SemverVersion::new(0, 0, 0));
+            let pre_ver = SemverVersion::parse(
+                pre_tag
+                    .trim_start_matches('v')
+                    .split('-')
+                    .next()
+                    .unwrap_or(""),
+            )
+            .unwrap_or_else(|_| SemverVersion::new(0, 0, 0));
 
-            Ok(if !self.not_with_v {
-                format!("v{}", new_version)
+            // If pre-release version is higher than stable tag, promote it to stable
+            if pre_ver > reg_ver {
+                debug!(
+                    "Pre-release tag {pre_tag} is ahead of regular tag {tag}, promoting to stable"
+                );
+                // Just remove the pre-release suffix to promote to stable
+                Ok(if !self.not_with_v {
+                    format!("v{}", pre_ver)
+                } else {
+                    pre_ver.to_string()
+                })
             } else {
-                new_version.to_string()
-            })
+                // Normal bump from stable tag
+                let log = self.get_commit_log(repo, tag)?;
+                let bump: &str = self.determine_bump(&log)?;
+                let mut new_version = SemverVersion::parse(tag.trim_start_matches('v'))
+                    .map_err(|e| CliError::SemVerError(e.to_string()))?;
+                self.apply_bump(&mut new_version, bump);
+
+                Ok(if !self.not_with_v {
+                    format!("v{}", new_version)
+                } else {
+                    new_version.to_string()
+                })
+            }
         }
     }
 
