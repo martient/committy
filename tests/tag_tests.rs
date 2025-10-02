@@ -132,6 +132,67 @@ fn test_pre_release_continues_from_highest_version() {
 }
 
 #[test]
+fn test_beta_to_main_promotion() {
+    let dir = setup_test_repo();
+    let repo = Repository::open(dir.path()).unwrap();
+    let signature = Signature::now("Test User", "test@example.com").unwrap();
+
+    // Create v0.4.0 stable tag
+    repo.tag(
+        "v0.4.0",
+        repo.head().unwrap().peel_to_commit().unwrap().as_object(),
+        &signature,
+        "Stable release",
+        false,
+    )
+    .unwrap();
+
+    // Create v0.7.2-beta.0 pre-release tag (higher than stable)
+    repo.tag(
+        "v0.7.2-beta.0",
+        repo.head().unwrap().peel_to_commit().unwrap().as_object(),
+        &signature,
+        "Beta release",
+        false,
+    )
+    .unwrap();
+
+    // Create a new commit to trigger tagging
+    {
+        let file_path = dir.path().join("feature.txt");
+        fs::write(&file_path, "new feature").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(std::path::Path::new("feature.txt")).unwrap();
+        index.write().unwrap();
+        let tree_id = index.write_tree().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+        let parent = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.commit(
+            Some("HEAD"),
+            &signature,
+            &signature,
+            "feat: merge beta to main",
+            &tree,
+            &[&parent],
+        )
+        .unwrap();
+    }
+
+    // Run tag command on main branch (should promote beta to stable v0.7.2)
+    let mut cmd = Command::cargo_bin("committy").unwrap();
+    cmd.current_dir(dir.path())
+        .arg("--non-interactive")
+        .arg("tag")
+        .arg("--dry-run")
+        .arg("--no-fetch");
+
+    // Should promote v0.7.2-beta.0 to v0.7.2, not bump from v0.4.0
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("v0.7.2").and(predicate::str::contains("beta").not()));
+}
+
+#[test]
 fn test_tag_with_staged_changes() {
     let dir = setup_test_repo();
 
