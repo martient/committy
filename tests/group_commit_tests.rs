@@ -1,6 +1,5 @@
 mod common;
 
-use assert_cmd::Command;
 use serde_json::Value;
 use std::process::Command as StdCommand;
 use tempfile::tempdir;
@@ -62,8 +61,7 @@ fn test_group_commit_apply_without_auto_stage_only_staged_committed() {
     std::fs::write(&code_file, "pub fn x() {}\n").unwrap();
 
     // Apply without include-unstaged and without auto-stage
-    let assert = Command::cargo_bin("committy")
-        .unwrap()
+    let assert = common::committy_cmd()
         .current_dir(&temp_dir)
         .env("RUST_LOG", "off")
         .arg("--non-interactive")
@@ -107,8 +105,7 @@ fn test_group_commit_apply_with_push_sets_pushed_false_without_remote() {
         .output()
         .expect("Failed to stage PUSH.md");
 
-    let assert = Command::cargo_bin("committy")
-        .unwrap()
+    let assert = common::committy_cmd()
         .current_dir(&temp_dir)
         .env("RUST_LOG", "off")
         .arg("--non-interactive")
@@ -148,8 +145,7 @@ fn test_group_commit_plan_json_offline() {
         .output()
         .expect("Failed to stage files");
 
-    let assert = Command::cargo_bin("committy")
-        .unwrap()
+    let assert = common::committy_cmd()
         .current_dir(&temp_dir)
         .env("RUST_LOG", "off")
         .arg("--non-interactive")
@@ -217,8 +213,7 @@ fn test_group_commit_apply_auto_stage_creates_commits() {
     std::fs::write(&code_file, "pub fn hello() {}\n").unwrap();
 
     // Run apply with auto-stage
-    let assert = Command::cargo_bin("committy")
-        .unwrap()
+    let assert = common::committy_cmd()
         .current_dir(&temp_dir)
         .env("RUST_LOG", "off")
         .arg("--non-interactive")

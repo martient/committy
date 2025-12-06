@@ -2,12 +2,16 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 use crate::cli::Command;
+use crate::config::hierarchy::MergedConfig;
+use crate::config::repository::RepositoryConfig;
 use crate::error::CliError;
 use crate::git;
 use crate::input;
 use crate::input::validation::{auto_correct_scope, suggest_commit_type};
+use crate::scope::detector::ScopeDetector;
 use crate::telemetry;
-use log::{debug, info};
+use crate::workflow::orchestrator::WorkflowOrchestrator;
+use log::{debug, info, warn};
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt, Default)]
@@ -50,6 +54,10 @@ impl Command for CommitCommand {
             }
         }
 
+        // Detect scopes from staged files early (for multi-package repositories)
+        let (detected_scopes, available_scopes, allow_multiple_scopes, require_scope) =
+            self.detect_scopes_from_config()?;
+
         // Handle commit type with auto-correction
         let commit_type = if let Some(commit_type) = &self.commit_type {
             if let Some(suggested) = suggest_commit_type(commit_type) {
@@ -79,8 +87,9 @@ impl Command for CommitCommand {
             false
         };
 
-        // Handle scope with auto-correction
+        // Handle scope with auto-detection and correction
         let scope = if let Some(scope) = &self.scope {
+            // CLI flag provided - use it
             if !non_interactive {
                 // In interactive mode, validate and potentially correct the scope
                 input::validate_scope_input(scope)?
@@ -93,7 +102,16 @@ impl Command for CommitCommand {
                 corrected
             }
         } else if !non_interactive {
-            input::input_scope()?
+            // Interactive mode - use smart scope detection
+            input::select_detected_scopes(&detected_scopes, &available_scopes, allow_multiple_scopes)?
+        } else if detected_scopes.len() == 1 {
+            // Non-interactive mode - auto-select single detected scope
+            detected_scopes[0].clone()
+        } else if detected_scopes.is_empty() && require_scope {
+            // Multi-package repo requires scope but none detected
+            return Err(CliError::InputError(
+                "Scope is required for multi-package repository but could not be auto-detected. Please provide --scope flag.".to_string(),
+            ));
         } else {
             String::new()
         };
@@ -124,6 +142,10 @@ impl Command for CommitCommand {
         );
 
         debug!("Formatted commit message: {full_message}");
+
+        // Run workflow orchestrator for multi-package repositories
+        self.run_workflow_if_configured(&full_message)?;
+
         git::commit_changes(&full_message, self.amend)?;
         // fire off telemetry without making this function async
         if let Err(e) =
@@ -156,5 +178,128 @@ impl Command for CommitCommand {
         }
         info!("Changes committed successfully! 🎉");
         Ok(())
+    }
+}
+
+impl CommitCommand {
+    /// Detect scopes from staged files and load available scopes from config
+    fn detect_scopes_from_config(
+        &self,
+    ) -> Result<(Vec<String>, Vec<String>, bool, bool), CliError> {
+        // Get current directory for config loading
+        let current_dir = std::env::current_dir()
+            .map_err(|e| CliError::InputError(format!("Failed to get current dir: {}", e)))?;
+
+        // Try to load merged config
+        let merged_config = match MergedConfig::load(&current_dir) {
+            Ok(config) => config,
+            Err(_) => {
+                // No config - return empty detected scopes
+                debug!("No repository config found for scope detection");
+                return Ok((vec![], vec![], false, false));
+            }
+        };
+
+        // Get repository config if it exists
+        if let Some(repo_config) = &merged_config.repository {
+            // Check if multi-package mode and auto_detect is enabled
+            if !repo_config.scopes.auto_detect {
+                debug!("Scope auto-detection disabled in config");
+                return Ok((vec![], vec![], false, false));
+            }
+
+            debug!("Attempting to auto-detect scopes from staged files");
+
+            // Create scope detector
+            let detector = ScopeDetector::new(repo_config.clone(), &current_dir);
+
+            // Detect scopes from staged files
+            let detected_scopes = detector
+                .detect_from_staged()
+                .unwrap_or_else(|e| {
+                    warn!("Scope detection failed: {}", e);
+                    vec![]
+                });
+
+            // Get available scopes
+            let available_scopes = detector
+                .suggest_scopes()
+                .unwrap_or_else(|e| {
+                    warn!("Failed to get scope suggestions: {}", e);
+                    vec![]
+                });
+
+            let allow_multiple = repo_config.scopes.allow_multiple_scopes;
+            let require_scope = repo_config.scopes.require_scope_for_multi_package;
+
+            if !detected_scopes.is_empty() {
+                info!(
+                    "Auto-detected {} scope(s): {}",
+                    detected_scopes.len(),
+                    detected_scopes.join(", ")
+                );
+            }
+
+            Ok((detected_scopes, available_scopes, allow_multiple, require_scope))
+        } else {
+            // No repository config
+            Ok((vec![], vec![], false, false))
+        }
+    }
+
+    /// Run workflow orchestrator if repository config exists
+    fn run_workflow_if_configured(&self, commit_message: &str) -> Result<(), CliError> {
+        // Get repository root
+        let repo = git::discover_repository()?;
+        let repo_path = repo
+            .workdir()
+            .ok_or_else(|| CliError::GitError(git2::Error::from_str("No working directory")))?;
+
+        // Try to load repository config
+        let config = match RepositoryConfig::try_load(repo_path) {
+            Ok(Some(config)) => config,
+            Ok(None) => {
+                debug!("No repository config found, skipping workflow orchestrator");
+                return Ok(());
+            }
+            Err(e) => {
+                warn!("Failed to load repository config: {}", e);
+                return Ok(());
+            }
+        };
+
+        debug!("Repository config loaded, running workflow orchestrator");
+
+        // Create and configure orchestrator
+        let orchestrator = WorkflowOrchestrator::new(repo_path, config);
+
+        // Run workflow (detect scopes, calculate updates, apply changes)
+        match orchestrator.run_workflow(commit_message, true) {
+            Ok(result) => {
+                if !result.scopes.is_empty() {
+                    info!("Workflow detected scopes: {:?}", result.scopes);
+                }
+                if result.has_changes() {
+                    info!(
+                        "Applied {} version update(s) and {} dependency update(s)",
+                        result.version_updates.len(),
+                        result.dependency_updates.len()
+                    );
+
+                    // Stage the updated files
+                    for file in &result.modified_files {
+                        if let Err(e) = git::stage_file(file) {
+                            warn!("Failed to stage {}: {}", file.display(), e);
+                        }
+                    }
+                }
+                Ok(())
+            }
+            Err(e) => {
+                warn!("Workflow orchestrator failed: {}", e);
+                // Don't fail the commit if workflow fails
+                Ok(())
+            }
+        }
     }
 }

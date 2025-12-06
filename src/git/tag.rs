@@ -58,6 +58,9 @@ pub struct TagGeneratorOptions {
     #[structopt(long, help = "Do not publish the new tag")]
     not_publish: bool,
 
+    #[structopt(long, help = "Publish the new tag after calculation")]
+    publish: bool,
+
     #[structopt(long, help = "Fetch tags from remote before calculation")]
     fetch: bool,
 
@@ -106,7 +109,11 @@ impl TagGenerator {
             none_string_token: options.none_string_token,
             force_without_change: options.force_without_change,
             tag_message: options.tag_message.unwrap_or_default(),
-            not_publish: options.not_publish,
+            not_publish: if options.publish {
+                false
+            } else {
+                options.not_publish
+            },
             // default to fetching unless --no-fetch is explicitly passed; --fetch enforces true
             fetch: if options.fetch {
                 true
@@ -713,7 +720,7 @@ mod tests {
         // Tag v8.3.2 (regular)
         repo.tag(
             "v8.3.2",
-            &repo.head().unwrap().peel_to_commit().unwrap().as_object(),
+            repo.head().unwrap().peel_to_commit().unwrap().as_object(),
             &signature,
             "Regular release",
             false,
@@ -722,7 +729,7 @@ mod tests {
         // Tag v10.0.0-beta.1 (pre-release)
         repo.tag(
             "v10.0.0-beta.1",
-            &repo.head().unwrap().peel_to_commit().unwrap().as_object(),
+            repo.head().unwrap().peel_to_commit().unwrap().as_object(),
             &signature,
             "Pre-release",
             false,
@@ -756,6 +763,7 @@ mod tests {
             none_string_token: "#none".to_string(),
             force_without_change: false,
             tag_message: None,
+            publish: false,
             not_publish: true,
             fetch: false,
             no_fetch: true,

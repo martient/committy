@@ -1,13 +1,23 @@
 use std::collections::HashMap;
 
 use crate::cli::Command;
+use crate::config::hierarchy::MergedConfig;
+use crate::config::repository::{RepositoryConfig, VersioningStrategy};
+use crate::dependency::updater::DependencyUpdater;
 use crate::error::CliError;
 use crate::git;
 use crate::input;
 use crate::telemetry;
+use crate::versioning::hybrid::HybridVersioning;
+use crate::versioning::independent::IndependentVersioning;
+use crate::versioning::manager::{BumpType, VersionManager};
+use crate::versioning::unified::UnifiedVersioning;
 use log::debug;
 use log::info;
+use regex::Regex;
 use serde_json::Value;
+use std::fs;
+use std::path::Path;
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
@@ -31,6 +41,10 @@ pub struct TagCommand {
     /// Output format: text or json
     #[structopt(long, default_value = "text", possible_values = &["text", "json"])]
     output: String,
+
+    /// Update dependency references during tagging
+    #[structopt(long, help = "Update dependency references in other packages")]
+    update_deps: bool,
 }
 
 impl Command for TagCommand {
@@ -39,7 +53,19 @@ impl Command for TagCommand {
             return Err(CliError::StagedChanges);
         }
 
+        // Load merged config to detect multi-package mode
+        let current_dir = std::env::current_dir()
+            .map_err(|e| CliError::InputError(format!("Failed to get current directory: {}", e)))?;
+        let merged_config = MergedConfig::load(&current_dir).ok();
+
+        // Check if multi-package mode
+        let is_multi_package = merged_config
+            .as_ref()
+            .map(|c| c.is_multi_package())
+            .unwrap_or(false);
+
         if let Some(name) = &self.name {
+            // Explicit tag name provided - use legacy flow
             let version_manager =
                 git::TagGenerator::new(self.tag_options.clone(), self.bump_config_files);
             version_manager.create_and_push_tag(&version_manager.open_repository()?, name)?;
@@ -52,6 +78,13 @@ impl Command for TagCommand {
             } else {
                 println!("Tag {name} created successfully!");
             }
+        } else if is_multi_package {
+            // Multi-package mode - use new strategy-aware flow
+            self.execute_multi_package(
+                non_interactive,
+                merged_config.as_ref().unwrap(),
+                &current_dir,
+            )?;
         } else if non_interactive {
             // In non-interactive mode, auto-calculate and act based on options
             let mut version_manager =
@@ -113,6 +146,358 @@ impl Command for TagCommand {
                 debug!("Telemetry error: {e:?}");
             }
         }
+
+        Ok(())
+    }
+}
+
+impl TagCommand {
+    /// Execute multi-package tag operation
+    fn execute_multi_package(
+        &self,
+        _non_interactive: bool,
+        config: &MergedConfig,
+        repo_path: &Path,
+    ) -> Result<(), CliError> {
+        let repo_config = config.repository.as_ref().ok_or_else(|| {
+            CliError::Generic("Repository config not found".to_string())
+        })?;
+
+        info!("🏢 Multi-package mode detected, using {:?} strategy", repo_config.versioning.strategy);
+
+        // Step 1: Get commit log since last tag
+        let repo = git::discover_repository()?;
+        let commit_log = self.get_commit_log_since_last_tag(&repo)?;
+        debug!("Commit log since last tag:\n{}", commit_log);
+
+        // Step 2: Detect scopes (affected packages) from commit log
+        let affected_packages = self.detect_affected_packages(&commit_log, repo_config)?;
+        if affected_packages.is_empty() {
+            info!("ℹ️ No packages affected by commits. Skipping tag creation.");
+            return Ok(());
+        }
+        info!("📦 Affected packages: {}", affected_packages.join(", "));
+
+        // Step 3: Determine version bump type from commit messages
+        let bump_type = self.determine_bump_type(&commit_log, config)?;
+        info!("📈 Version bump type: {:?}", bump_type);
+
+        // Step 4: Route through versioning strategy
+        let version_updates = self.calculate_version_updates(
+            repo_config,
+            repo_path,
+            &affected_packages,
+            bump_type,
+        )?;
+
+        if version_updates.is_empty() {
+            info!("ℹ️ No version updates calculated. Skipping tag creation.");
+            return Ok(());
+        }
+
+        // Step 5: Update version files per package
+        if self.bump_config_files {
+            self.apply_version_updates(repo_path, &version_updates)?;
+            info!("✅ Updated version files for {} package(s)", version_updates.len());
+        }
+
+        // Step 6: Update dependencies if requested
+        if self.update_deps {
+            self.apply_dependency_updates(repo_config, repo_path, &version_updates)?;
+            info!("✅ Updated dependency references");
+        }
+
+        // Step 7: Create tags based on versioning strategy
+        self.create_multi_package_tags(&repo, repo_config, &version_updates)?;
+        info!("✅ Tags created successfully");
+
+        Ok(())
+    }
+
+    /// Get commit log since last tag
+    fn get_commit_log_since_last_tag(&self, repo: &git2::Repository) -> Result<String, CliError> {
+        // Try to find the latest tag
+        let latest_tag = self.find_latest_tag(repo)?;
+        let range = if latest_tag.is_empty() {
+            "HEAD".to_string()
+        } else {
+            format!("{}..HEAD", latest_tag)
+        };
+
+        // Use git log to get commit messages
+        let repo_path = repo.path();
+
+        let output = std::process::Command::new("git")
+            .args(["log", "--pretty=%B", &range])
+            .current_dir(repo_path)
+            .output()
+            .map_err(|e| CliError::Generic(format!("Failed to get commit log: {}", e)))?;
+
+        String::from_utf8(output.stdout)
+            .map_err(|e| CliError::Generic(format!("Invalid UTF-8 in commit log: {}", e)))
+    }
+
+    /// Find the latest tag in the repository
+    fn find_latest_tag(&self, repo: &git2::Repository) -> Result<String, CliError> {
+        let tags = repo.tag_names(None).map_err(CliError::from)?;
+        Ok(tags
+            .iter()
+            .flatten()
+            .last()
+            .unwrap_or("")
+            .to_string())
+    }
+
+    /// Detect affected packages from commit log using scopes
+    fn detect_affected_packages(
+        &self,
+        commit_log: &str,
+        config: &RepositoryConfig,
+    ) -> Result<Vec<String>, CliError> {
+        let mut packages = std::collections::HashSet::new();
+
+        // Extract scopes from commit messages (pattern: type(scope): message)
+        let scope_regex =
+            Regex::new(r"^[a-z]+\(([^)]+)\):")
+                .map_err(|e| CliError::Generic(format!("Regex error: {}", e)))?;
+
+        for line in commit_log.lines() {
+            if let Some(caps) = scope_regex.captures(line) {
+                let scope = caps.get(1).map(|m| m.as_str()).unwrap_or("");
+                // Check if scope matches a package
+                if config.packages.iter().any(|p| p.name == scope) {
+                    packages.insert(scope.to_string());
+                }
+            }
+        }
+
+        Ok(packages.into_iter().collect())
+    }
+
+    /// Determine version bump type from commit messages
+    fn determine_bump_type(&self, commit_log: &str, config: &MergedConfig) -> Result<BumpType, CliError> {
+        let major_regex = config.get_major_regex();
+        let minor_regex = config.get_minor_regex();
+
+        let major_re =
+            Regex::new(major_regex)
+                .map_err(|e| CliError::Generic(format!("Invalid major regex: {}", e)))?;
+        let minor_re =
+            Regex::new(minor_regex)
+                .map_err(|e| CliError::Generic(format!("Invalid minor regex: {}", e)))?;
+
+        if major_re.is_match(commit_log) {
+            Ok(BumpType::Major)
+        } else if minor_re.is_match(commit_log) {
+            Ok(BumpType::Minor)
+        } else {
+            Ok(BumpType::Patch)
+        }
+    }
+
+    /// Calculate version updates using appropriate strategy
+    fn calculate_version_updates(
+        &self,
+        config: &RepositoryConfig,
+        repo_path: &Path,
+        affected_packages: &[String],
+        bump_type: BumpType,
+    ) -> Result<Vec<crate::versioning::manager::VersionUpdate>, CliError> {
+        let strategy = &config.versioning.strategy;
+
+        let updates = match strategy {
+            VersioningStrategy::Independent => {
+                let strat = IndependentVersioning::new(config.clone(), repo_path);
+                strat
+                    .calculate_updates(affected_packages, bump_type)
+                    .map_err(|e| CliError::Generic(format!("Failed to calculate updates: {}", e)))?
+            }
+            VersioningStrategy::Unified => {
+                let strat = UnifiedVersioning::new(config.clone(), repo_path);
+                strat
+                    .calculate_updates(affected_packages, bump_type)
+                    .map_err(|e| CliError::Generic(format!("Failed to calculate updates: {}", e)))?
+            }
+            VersioningStrategy::Hybrid => {
+                let strat = HybridVersioning::new(config.clone(), repo_path);
+                strat
+                    .calculate_updates(affected_packages, bump_type)
+                    .map_err(|e| CliError::Generic(format!("Failed to calculate updates: {}", e)))?
+            }
+        };
+
+        Ok(updates)
+    }
+
+    /// Apply version updates to package files
+    fn apply_version_updates(
+        &self,
+        repo_path: &Path,
+        updates: &[crate::versioning::manager::VersionUpdate],
+    ) -> Result<(), CliError> {
+        for update in updates {
+            // Find package config to get version file
+            let config = RepositoryConfig::try_load(repo_path)
+                .map_err(|e| CliError::Generic(format!("Failed to load config: {}", e)))?
+                .ok_or_else(|| CliError::Generic("No repository config".to_string()))?;
+
+            let pkg_config = config
+                .packages
+                .iter()
+                .find(|p| p.name == update.package_name)
+                .ok_or_else(|| {
+                    CliError::Generic(format!("Package '{}' not found in config", update.package_name))
+                })?;
+
+            // Update version file
+            let version_file = repo_path
+                .join(&pkg_config.path)
+                .join(&pkg_config.version_file);
+
+            let content = fs::read_to_string(&version_file)
+                .map_err(|e| CliError::Generic(format!("Failed to read version file: {}", e)))?;
+
+            let updated = content.replace(&update.old_version, &update.new_version);
+
+            fs::write(&version_file, updated)
+                .map_err(|e| CliError::Generic(format!("Failed to write version file: {}", e)))?;
+
+            // Stage the updated file
+            if let Err(e) = git::stage_file(&version_file) {
+                debug!("Failed to stage {}: {}", version_file.display(), e);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Apply dependency updates to other packages
+    fn apply_dependency_updates(
+        &self,
+        config: &RepositoryConfig,
+        repo_path: &Path,
+        updates: &[crate::versioning::manager::VersionUpdate],
+    ) -> Result<(), CliError> {
+        let updater = DependencyUpdater::new(config.clone(), repo_path);
+
+        for update in updates {
+            match updater.calculate_updates(&update.package_name, &update.new_version) {
+                Ok(dep_updates) => {
+                    match updater.apply_updates(&dep_updates) {
+                        Ok(updated_files) => {
+                            for file in updated_files {
+                                // Stage the updated dependency file
+                                if let Err(e) = git::stage_file(Path::new(&file)) {
+                                    debug!("Failed to stage {}: {}", file, e);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            debug!("Failed to apply dependency updates: {}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    debug!("Failed to calculate dependency updates: {}", e);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Create appropriate tags based on versioning strategy
+    fn create_multi_package_tags(
+        &self,
+        repo: &git2::Repository,
+        config: &RepositoryConfig,
+        updates: &[crate::versioning::manager::VersionUpdate],
+    ) -> Result<(), CliError> {
+        let strategy = &config.versioning.strategy;
+
+        match strategy {
+            VersioningStrategy::Unified => {
+                // Single tag for all packages
+                if let Some(update) = updates.first() {
+                    let tag_name = format!("v{}", update.new_version);
+                    self.create_and_push_tag(repo, &tag_name)?;
+                    info!("📌 Created unified tag: {}", tag_name);
+                }
+            }
+            VersioningStrategy::Independent | VersioningStrategy::Hybrid => {
+                // Per-package tags
+                for update in updates {
+                    let tag_name = format!("{}-v{}", update.package_name, update.new_version);
+                    self.create_and_push_tag(repo, &tag_name)?;
+                    info!("📌 Created tag: {}", tag_name);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Create a git tag and optionally push to remote
+    fn create_and_push_tag(&self, repo: &git2::Repository, tag_name: &str) -> Result<(), CliError> {
+        let head = repo.head().map_err(CliError::from)?;
+        let target_oid = head.target().ok_or_else(|| {
+            CliError::Generic("Failed to get HEAD target".to_string())
+        })?;
+
+        // Create annotated tag
+        repo.tag(
+            tag_name,
+            &repo.find_object(target_oid, None).map_err(CliError::from)?,
+            &repo.signature().unwrap_or_else(|_| {
+                git2::Signature::now("committy", "committy@example.com")
+                    .unwrap_or_else(|_| panic!("Failed to create signature"))
+            }),
+            "",
+            false,
+        )
+        .map_err(CliError::from)?;
+
+        info!("✅ Tag '{}' created locally", tag_name);
+
+        // Try to push to remote
+        if let Err(e) = self.push_tag_to_remote(repo, tag_name) {
+            debug!("Failed to push tag to remote: {}", e);
+        } else {
+            info!("📤 Tag '{}' pushed to remote", tag_name);
+        }
+
+        Ok(())
+    }
+
+    /// Push tag to remote repository
+    fn push_tag_to_remote(
+        &self,
+        repo: &git2::Repository,
+        tag_name: &str,
+    ) -> Result<(), CliError> {
+        let mut remote = repo.find_remote("origin").map_err(CliError::from)?;
+
+        let refspec = format!("refs/tags/{}:refs/tags/{}", tag_name, tag_name);
+
+        let mut callbacks = git2::RemoteCallbacks::new();
+        callbacks.credentials(|_url, username_from_url, _allowed_types| {
+            git2::Cred::ssh_key(
+                username_from_url.unwrap_or("git"),
+                None,
+                std::path::Path::new(&format!(
+                    "{}/.ssh/id_rsa",
+                    std::env::var("HOME").unwrap_or_else(|_| ".".to_string())
+                )),
+                None,
+            )
+        });
+
+        let mut push_options = git2::PushOptions::new();
+        push_options.remote_callbacks(callbacks);
+
+        remote
+            .push(&[&refspec], Some(&mut push_options))
+            .map_err(CliError::from)?;
 
         Ok(())
     }

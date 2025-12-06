@@ -1,6 +1,8 @@
 pub mod commands;
 
-use self::commands::{amend, branch, commit, group_commit, lint, lint_message, tag};
+use self::commands::{
+    amend, branch, commit, config, group_commit, init, lint, lint_message, packages, tag,
+};
 use crate::error::CliError;
 use structopt::StructOpt;
 
@@ -24,6 +26,12 @@ pub enum CliCommand {
     Branch(branch::BranchCommand),
     #[structopt(about = "Group changes and optionally commit/apply them (with optional AI)")]
     GroupCommit(group_commit::GroupCommitCommand),
+    #[structopt(about = "Initialize multi-package support")]
+    Init(init::InitCommand),
+    #[structopt(about = "Manage repository configuration")]
+    Config(config::ConfigCommand),
+    #[structopt(about = "Manage packages in multi-package repositories")]
+    Packages(packages::PackagesCommand),
 }
 
 impl CliCommand {
@@ -36,6 +44,9 @@ impl CliCommand {
             CliCommand::LintMessage(cmd) => cmd.execute(non_interactive),
             CliCommand::Branch(cmd) => cmd.execute(non_interactive),
             CliCommand::GroupCommit(cmd) => cmd.execute(non_interactive),
+            CliCommand::Init(cmd) => cmd.execute(non_interactive),
+            CliCommand::Config(cmd) => cmd.execute(non_interactive),
+            CliCommand::Packages(cmd) => cmd.execute(non_interactive),
         }
     }
 }

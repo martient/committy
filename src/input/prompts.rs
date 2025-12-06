@@ -192,6 +192,38 @@ pub fn input_scope() -> Result<String, CliError> {
     }
 }
 
+pub fn select_detected_scopes(
+    detected: &[String],
+    _all_available: &[String],
+    _allow_multiple: bool,
+) -> Result<String, CliError> {
+    if non_interactive_env() {
+        return Err(CliError::InputError(
+            "Non-interactive environment: cannot prompt for scope".to_string(),
+        ));
+    }
+
+    // If no detected scopes: fall back to generic input
+    if detected.is_empty() {
+        return input_scope();
+    }
+
+    // Single detected scope: auto-select with confirmation
+    if detected.len() == 1 {
+        use colored::Colorize;
+        println!("✓ Detected scope: {}", detected[0].green());
+        return Ok(detected[0].clone());
+    }
+
+    // Multiple detected: ask user to select one
+    let scope = Select::new("Select scope:", detected.to_vec())
+        .with_help_message("Use arrow keys to navigate, Enter to select")
+        .prompt()
+        .map_err(|e| CliError::InputError(e.to_string()))?;
+
+    Ok(scope.to_string())
+}
+
 pub fn input_short_message() -> Result<String, CliError> {
     if non_interactive_env() {
         return Err(CliError::InputError(

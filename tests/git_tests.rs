@@ -1,6 +1,5 @@
 mod common;
 
-use assert_cmd::Command;
 use predicates::prelude::*;
 use std::fs;
 use std::process::Command as StdCommand;
@@ -81,7 +80,7 @@ fn test_commit_message_formatting() {
         .expect("Failed to stage test file");
 
     // Test commit with scope and breaking change
-    let mut cmd = Command::cargo_bin("committy").unwrap();
+    let mut cmd = common::committy_cmd();
     cmd.current_dir(&temp_dir)
         .env("RUST_LOG", "info")
         .arg("--non-interactive")
@@ -118,7 +117,7 @@ fn test_unstaged_changes() {
     let test_file = temp_dir.path().join("test.txt");
     fs::write(&test_file, "test content").expect("Failed to write test file");
 
-    let mut cmd = Command::cargo_bin("committy").unwrap();
+    let mut cmd = common::committy_cmd();
     cmd.current_dir(&temp_dir)
         .env("RUST_LOG", "off")
         .arg("--non-interactive")
@@ -148,7 +147,7 @@ fn test_commit_without_git_config() {
         .output()
         .expect("Failed to stage test file");
 
-    let mut cmd = Command::cargo_bin("committy").unwrap();
+    let mut cmd = common::committy_cmd();
     cmd.current_dir(&temp_dir)
         .env("RUST_LOG", "off")
         .env("GIT_COMMITTER_NAME", "")
@@ -181,7 +180,7 @@ fn test_commit_with_amend() {
         .expect("Failed to stage test file");
 
     // Initial commit
-    let mut cmd = Command::cargo_bin("committy").unwrap();
+    let mut cmd = common::committy_cmd();
     cmd.current_dir(&temp_dir)
         .env("RUST_LOG", "info")
         .arg("--non-interactive")
@@ -202,7 +201,7 @@ fn test_commit_with_amend() {
         .expect("Failed to stage updated file");
 
     // Amend commit with non-interactive mode
-    let mut cmd = Command::cargo_bin("committy").unwrap();
+    let mut cmd = common::committy_cmd();
     cmd.current_dir(&temp_dir)
         .env("RUST_LOG", "info")
         .arg("--non-interactive")

@@ -1,10 +1,10 @@
-use assert_cmd::prelude::*;
+mod common;
+
 use predicates::prelude::*;
-use std::process::Command;
 
 #[test]
 fn lint_message_valid_text() {
-    let mut cmd = Command::cargo_bin("committy").unwrap();
+    let mut cmd = common::committy_cmd();
     cmd.args([
         "--non-interactive",
         "lint-message",
@@ -18,7 +18,7 @@ fn lint_message_valid_text() {
 
 #[test]
 fn lint_message_invalid_text() {
-    let mut cmd = Command::cargo_bin("committy").unwrap();
+    let mut cmd = common::committy_cmd();
     cmd.args([
         "--non-interactive",
         "lint-message",
@@ -35,7 +35,7 @@ fn lint_message_invalid_text() {
 
 #[test]
 fn lint_message_valid_json() {
-    let mut cmd = Command::cargo_bin("committy").unwrap();
+    let mut cmd = common::committy_cmd();
     cmd.args([
         "--non-interactive",
         "lint-message",
@@ -53,7 +53,7 @@ fn lint_message_valid_json() {
 
 #[test]
 fn lint_message_invalid_json() {
-    let mut cmd = Command::cargo_bin("committy").unwrap();
+    let mut cmd = common::committy_cmd();
     cmd.args([
         "--non-interactive",
         "lint-message",

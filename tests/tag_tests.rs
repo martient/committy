@@ -1,4 +1,5 @@
-use assert_cmd::Command;
+mod common;
+
 use git2::{Repository, Signature};
 use predicates::prelude::*;
 use std::fs;
@@ -37,7 +38,7 @@ fn setup_test_repo() -> tempfile::TempDir {
 fn test_tag_with_message() {
     let dir = setup_test_repo();
 
-    let mut cmd = Command::cargo_bin("committy").unwrap();
+    let mut cmd = common::committy_cmd();
     cmd.current_dir(dir.path())
         .arg("tag")
         .arg("--name")
@@ -58,7 +59,7 @@ fn test_tag_with_message() {
 fn test_tag_without_message() {
     let dir = setup_test_repo();
 
-    let mut cmd = Command::cargo_bin("committy").unwrap();
+    let mut cmd = common::committy_cmd();
     cmd.current_dir(dir.path())
         .arg("tag")
         .arg("--name")
@@ -119,7 +120,7 @@ fn test_pre_release_continues_from_highest_version() {
     }
 
     // Run the tag command in pre-release mode (should produce v10.0.0-beta.2)
-    let mut cmd = Command::cargo_bin("committy").unwrap();
+    let mut cmd = common::committy_cmd();
     cmd.current_dir(dir.path())
         .arg("--non-interactive")
         .arg("tag")
@@ -179,7 +180,7 @@ fn test_beta_to_main_promotion() {
     }
 
     // Run tag command on main branch (should promote beta to stable v0.7.2)
-    let mut cmd = Command::cargo_bin("committy").unwrap();
+    let mut cmd = common::committy_cmd();
     cmd.current_dir(dir.path())
         .arg("--non-interactive")
         .arg("tag")
@@ -205,7 +206,7 @@ fn test_tag_with_staged_changes() {
     index.add_path(std::path::Path::new("test.txt")).unwrap();
     index.write().unwrap();
 
-    let mut cmd = Command::cargo_bin("committy").unwrap();
+    let mut cmd = common::committy_cmd();
     cmd.current_dir(dir.path())
         .arg("tag")
         .arg("--name")

@@ -1,5 +1,22 @@
 use super::repository::discover_repository;
 use crate::error::CliError;
+use std::path::Path;
+
+/// Stage a file for commit
+pub fn stage_file(file_path: &Path) -> Result<(), CliError> {
+    let repo = discover_repository()?;
+    let mut index = repo.index()?;
+
+    // Convert absolute path to relative path from repo root
+    let repo_path = repo
+        .workdir()
+        .ok_or_else(|| CliError::GitError(git2::Error::from_str("No working directory")))?;
+    let relative_path = file_path.strip_prefix(repo_path).unwrap_or(file_path);
+
+    index.add_path(relative_path)?;
+    index.write()?;
+    Ok(())
+}
 
 pub fn commit_changes(message: &str, amend: bool) -> Result<(), CliError> {
     let repo = discover_repository()?;

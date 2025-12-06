@@ -1,3 +1,5 @@
+mod common;
+
 use git2::{Repository, Signature};
 use std::fs;
 use tempfile::tempdir;
@@ -121,19 +123,36 @@ fn test_beta_increments_counter_not_version() {
     .unwrap();
 
     // Run tag command in prerelease mode
-    let mut cmd = assert_cmd::Command::cargo_bin("committy").unwrap();
-    cmd.current_dir(dir.path())
+    let output = common::committy_cmd()
+        .current_dir(dir.path())
         .arg("--non-interactive")
         .arg("tag")
-        .arg("--prerelease")
-        .arg("--dry-run")
         .arg("--no-fetch")
-        .arg("--output")
-        .arg("json");
+        .arg("--publish")
+        .arg("--prerelease")
+        .arg("--prerelease-suffix")
+        .arg("beta")
+        .output()
+        .expect("failed to execute committy tag prerelease");
 
-    let output = cmd.output().unwrap();
-    let stdout = String::from_utf8(output.stdout).unwrap();
-    println!("Output: {}", stdout);
+    if !output.status.success() {
+        eprintln!(
+            "stdout: {}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        eprintln!(
+            "stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    assert!(
+        output.status.success(),
+        "committy tag prerelease exited with status {:?}",
+        output.status.code()
+    );
+
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be valid UTF-8");
 
     // Should produce v1.2.0-beta.2, not v1.3.0-beta.0
     assert!(
@@ -195,7 +214,7 @@ fn test_beta_with_breaking_change_increments_counter() {
     )
     .unwrap();
 
-    let mut cmd = assert_cmd::Command::cargo_bin("committy").unwrap();
+    let mut cmd = common::committy_cmd();
     cmd.current_dir(dir.path())
         .arg("--non-interactive")
         .arg("tag")
@@ -256,7 +275,7 @@ fn test_first_beta_after_main_applies_bump() {
     )
     .unwrap();
 
-    let mut cmd = assert_cmd::Command::cargo_bin("committy").unwrap();
+    let mut cmd = common::committy_cmd();
     cmd.current_dir(dir.path())
         .arg("--non-interactive")
         .arg("tag")
@@ -321,7 +340,7 @@ fn test_multiple_patches_on_beta() {
     )
     .unwrap();
 
-    let mut cmd = assert_cmd::Command::cargo_bin("committy").unwrap();
+    let mut cmd = common::committy_cmd();
     cmd.current_dir(dir.path())
         .arg("--non-interactive")
         .arg("tag")
@@ -391,7 +410,7 @@ fn test_beta_catches_up_to_main() {
     )
     .unwrap();
 
-    let mut cmd = assert_cmd::Command::cargo_bin("committy").unwrap();
+    let mut cmd = common::committy_cmd();
     cmd.current_dir(dir.path())
         .arg("--non-interactive")
         .arg("tag")
@@ -456,7 +475,7 @@ fn test_chore_on_beta_increments_counter() {
     )
     .unwrap();
 
-    let mut cmd = assert_cmd::Command::cargo_bin("committy").unwrap();
+    let mut cmd = common::committy_cmd();
     cmd.current_dir(dir.path())
         .arg("--non-interactive")
         .arg("tag")
