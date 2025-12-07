@@ -106,7 +106,7 @@ impl VersionManager for HybridVersioning {
             // Find the detected package to get current version
             let detected_pkg = detected_packages
                 .iter()
-                .find(|p| p.path == std::path::PathBuf::from(&cfg_pkg.path))
+                .find(|p| p.path == std::path::Path::new(&cfg_pkg.path))
                 .ok_or_else(|| {
                     anyhow::anyhow!("Package '{}' not found at {}", pkg_name, cfg_pkg.path)
                 })?;

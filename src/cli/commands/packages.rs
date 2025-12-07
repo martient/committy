@@ -201,7 +201,7 @@ pub fn status(repo_path: &Path, verbose: bool, check: bool) -> Result<()> {
         // Find matching detected package
         let detected = detected_packages
             .iter()
-            .find(|p| p.path == std::path::PathBuf::from(&cfg_pkg.path));
+            .find(|p| p.path == std::path::Path::new(&cfg_pkg.path));
 
         if let Some(detected_pkg) = detected {
             // Package found
@@ -233,7 +233,7 @@ pub fn status(repo_path: &Path, verbose: bool, check: bool) -> Result<()> {
                     let _sync_pkg_path = repo_path.join(&sync_pkg.path);
                     if let Some(sync_detected) = detected_packages
                         .iter()
-                        .find(|p| p.path == std::path::PathBuf::from(&sync_pkg.path))
+                        .find(|p| p.path == std::path::Path::new(&sync_pkg.path))
                     {
                         if detected_pkg.version != sync_detected.version {
                             issues.push(format!(
@@ -268,7 +268,7 @@ pub fn status(repo_path: &Path, verbose: bool, check: bool) -> Result<()> {
         if !config
             .packages
             .iter()
-            .any(|p| std::path::PathBuf::from(&p.path) == detected_pkg.path)
+            .any(|p| std::path::Path::new(&p.path) == detected_pkg.path)
         {
             println!(
                 "  {} {} - {} ({})",
@@ -344,11 +344,11 @@ pub fn sync(repo_path: &Path, dry_run: bool) -> Result<()> {
             // Get current versions
             let current_pkg = detected_packages
                 .iter()
-                .find(|p| p.path == std::path::PathBuf::from(&cfg_pkg.path));
+                .find(|p| p.path == std::path::Path::new(&cfg_pkg.path));
 
             let target_pkg = detected_packages
                 .iter()
-                .find(|p| p.path == std::path::PathBuf::from(&sync_target.path));
+                .find(|p| p.path == std::path::Path::new(&sync_target.path));
 
             if let (Some(current), Some(target)) = (current_pkg, target_pkg) {
                 if current.version != target.version {
