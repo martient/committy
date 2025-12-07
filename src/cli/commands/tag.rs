@@ -159,11 +159,15 @@ impl TagCommand {
         config: &MergedConfig,
         repo_path: &Path,
     ) -> Result<(), CliError> {
-        let repo_config = config.repository.as_ref().ok_or_else(|| {
-            CliError::Generic("Repository config not found".to_string())
-        })?;
+        let repo_config = config
+            .repository
+            .as_ref()
+            .ok_or_else(|| CliError::Generic("Repository config not found".to_string()))?;
 
-        info!("🏢 Multi-package mode detected, using {:?} strategy", repo_config.versioning.strategy);
+        info!(
+            "🏢 Multi-package mode detected, using {:?} strategy",
+            repo_config.versioning.strategy
+        );
 
         // Step 1: Get commit log since last tag
         let repo = git::discover_repository()?;
@@ -183,12 +187,8 @@ impl TagCommand {
         info!("📈 Version bump type: {:?}", bump_type);
 
         // Step 4: Route through versioning strategy
-        let version_updates = self.calculate_version_updates(
-            repo_config,
-            repo_path,
-            &affected_packages,
-            bump_type,
-        )?;
+        let version_updates =
+            self.calculate_version_updates(repo_config, repo_path, &affected_packages, bump_type)?;
 
         if version_updates.is_empty() {
             info!("ℹ️ No version updates calculated. Skipping tag creation.");
@@ -198,7 +198,10 @@ impl TagCommand {
         // Step 5: Update version files per package
         if self.bump_config_files {
             self.apply_version_updates(repo_path, &version_updates)?;
-            info!("✅ Updated version files for {} package(s)", version_updates.len());
+            info!(
+                "✅ Updated version files for {} package(s)",
+                version_updates.len()
+            );
         }
 
         // Step 6: Update dependencies if requested
@@ -240,12 +243,7 @@ impl TagCommand {
     /// Find the latest tag in the repository
     fn find_latest_tag(&self, repo: &git2::Repository) -> Result<String, CliError> {
         let tags = repo.tag_names(None).map_err(CliError::from)?;
-        Ok(tags
-            .iter()
-            .flatten()
-            .last()
-            .unwrap_or("")
-            .to_string())
+        Ok(tags.iter().flatten().last().unwrap_or("").to_string())
     }
 
     /// Detect affected packages from commit log using scopes
@@ -257,9 +255,8 @@ impl TagCommand {
         let mut packages = std::collections::HashSet::new();
 
         // Extract scopes from commit messages (pattern: type(scope): message)
-        let scope_regex =
-            Regex::new(r"^[a-z]+\(([^)]+)\):")
-                .map_err(|e| CliError::Generic(format!("Regex error: {}", e)))?;
+        let scope_regex = Regex::new(r"^[a-z]+\(([^)]+)\):")
+            .map_err(|e| CliError::Generic(format!("Regex error: {}", e)))?;
 
         for line in commit_log.lines() {
             if let Some(caps) = scope_regex.captures(line) {
@@ -275,16 +272,18 @@ impl TagCommand {
     }
 
     /// Determine version bump type from commit messages
-    fn determine_bump_type(&self, commit_log: &str, config: &MergedConfig) -> Result<BumpType, CliError> {
+    fn determine_bump_type(
+        &self,
+        commit_log: &str,
+        config: &MergedConfig,
+    ) -> Result<BumpType, CliError> {
         let major_regex = config.get_major_regex();
         let minor_regex = config.get_minor_regex();
 
-        let major_re =
-            Regex::new(major_regex)
-                .map_err(|e| CliError::Generic(format!("Invalid major regex: {}", e)))?;
-        let minor_re =
-            Regex::new(minor_regex)
-                .map_err(|e| CliError::Generic(format!("Invalid minor regex: {}", e)))?;
+        let major_re = Regex::new(major_regex)
+            .map_err(|e| CliError::Generic(format!("Invalid major regex: {}", e)))?;
+        let minor_re = Regex::new(minor_regex)
+            .map_err(|e| CliError::Generic(format!("Invalid minor regex: {}", e)))?;
 
         if major_re.is_match(commit_log) {
             Ok(BumpType::Major)
@@ -346,7 +345,10 @@ impl TagCommand {
                 .iter()
                 .find(|p| p.name == update.package_name)
                 .ok_or_else(|| {
-                    CliError::Generic(format!("Package '{}' not found in config", update.package_name))
+                    CliError::Generic(format!(
+                        "Package '{}' not found in config",
+                        update.package_name
+                    ))
                 })?;
 
             // Update version file
@@ -440,9 +442,9 @@ impl TagCommand {
     /// Create a git tag and optionally push to remote
     fn create_and_push_tag(&self, repo: &git2::Repository, tag_name: &str) -> Result<(), CliError> {
         let head = repo.head().map_err(CliError::from)?;
-        let target_oid = head.target().ok_or_else(|| {
-            CliError::Generic("Failed to get HEAD target".to_string())
-        })?;
+        let target_oid = head
+            .target()
+            .ok_or_else(|| CliError::Generic("Failed to get HEAD target".to_string()))?;
 
         // Create annotated tag
         repo.tag(
@@ -470,11 +472,7 @@ impl TagCommand {
     }
 
     /// Push tag to remote repository
-    fn push_tag_to_remote(
-        &self,
-        repo: &git2::Repository,
-        tag_name: &str,
-    ) -> Result<(), CliError> {
+    fn push_tag_to_remote(&self, repo: &git2::Repository, tag_name: &str) -> Result<(), CliError> {
         let mut remote = repo.find_remote("origin").map_err(CliError::from)?;
 
         let refspec = format!("refs/tags/{}:refs/tags/{}", tag_name, tag_name);

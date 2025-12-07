@@ -200,15 +200,14 @@ impl Command for InitCommand {
         })?;
 
         fs::write(".committy/config.toml", &toml_string).map_err(|e| {
-            CliError::Generic(format!(
-                "Failed to write .committy/config.toml: {}",
-                e
-            ))
+            CliError::Generic(format!("Failed to write .committy/config.toml: {}", e))
         })?;
 
         println!(
             "{}",
-            "✓ Configuration created: .committy/config.toml".green().bold()
+            "✓ Configuration created: .committy/config.toml"
+                .green()
+                .bold()
         );
         println!(
             "{}",
@@ -238,9 +237,11 @@ impl InitCommand {
             },
             "path": ".committy/config.toml",
         });
-        println!("{}", serde_json::to_string_pretty(&result).map_err(|e| {
-            CliError::Generic(format!("Failed to serialize JSON: {}", e))
-        })?);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&result)
+                .map_err(|e| { CliError::Generic(format!("Failed to serialize JSON: {}", e)) })?
+        );
         Ok(())
     }
 }
@@ -248,8 +249,6 @@ impl InitCommand {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
-    use tempfile::TempDir;
 
     #[test]
     fn test_init_command_creation() {

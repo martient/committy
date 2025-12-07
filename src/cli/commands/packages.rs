@@ -542,12 +542,19 @@ fn output_text(
 
     println!(
         "{}",
-        format!("Packages changed: {}", packages.len()).bold().green()
+        format!("Packages changed: {}", packages.len())
+            .bold()
+            .green()
     );
     println!();
 
     for pkg in packages.values() {
-        println!("  {} {} - {}", "●".green(), pkg.name.bold(), pkg.version.cyan());
+        println!(
+            "  {} {} - {}",
+            "●".green(),
+            pkg.name.bold(),
+            pkg.version.cyan()
+        );
         if verbose {
             println!("    Path: {}", pkg.path);
             println!("    Files changed: {}", pkg.files_changed.len());

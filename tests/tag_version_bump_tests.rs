@@ -136,14 +136,8 @@ fn test_beta_increments_counter_not_version() {
         .expect("failed to execute committy tag prerelease");
 
     if !output.status.success() {
-        eprintln!(
-            "stdout: {}",
-            String::from_utf8_lossy(&output.stdout)
-        );
-        eprintln!(
-            "stderr: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
+        eprintln!("stdout: {}", String::from_utf8_lossy(&output.stdout));
+        eprintln!("stderr: {}", String::from_utf8_lossy(&output.stderr));
     }
 
     assert!(

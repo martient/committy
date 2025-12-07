@@ -103,7 +103,11 @@ impl Command for CommitCommand {
             }
         } else if !non_interactive {
             // Interactive mode - use smart scope detection
-            input::select_detected_scopes(&detected_scopes, &available_scopes, allow_multiple_scopes)?
+            input::select_detected_scopes(
+                &detected_scopes,
+                &available_scopes,
+                allow_multiple_scopes,
+            )?
         } else if detected_scopes.len() == 1 {
             // Non-interactive mode - auto-select single detected scope
             detected_scopes[0].clone()
@@ -214,20 +218,16 @@ impl CommitCommand {
             let detector = ScopeDetector::new(repo_config.clone(), &current_dir);
 
             // Detect scopes from staged files
-            let detected_scopes = detector
-                .detect_from_staged()
-                .unwrap_or_else(|e| {
-                    warn!("Scope detection failed: {}", e);
-                    vec![]
-                });
+            let detected_scopes = detector.detect_from_staged().unwrap_or_else(|e| {
+                warn!("Scope detection failed: {}", e);
+                vec![]
+            });
 
             // Get available scopes
-            let available_scopes = detector
-                .suggest_scopes()
-                .unwrap_or_else(|e| {
-                    warn!("Failed to get scope suggestions: {}", e);
-                    vec![]
-                });
+            let available_scopes = detector.suggest_scopes().unwrap_or_else(|e| {
+                warn!("Failed to get scope suggestions: {}", e);
+                vec![]
+            });
 
             let allow_multiple = repo_config.scopes.allow_multiple_scopes;
             let require_scope = repo_config.scopes.require_scope_for_multi_package;
@@ -240,7 +240,12 @@ impl CommitCommand {
                 );
             }
 
-            Ok((detected_scopes, available_scopes, allow_multiple, require_scope))
+            Ok((
+                detected_scopes,
+                available_scopes,
+                allow_multiple,
+                require_scope,
+            ))
         } else {
             // No repository config
             Ok((vec![], vec![], false, false))
