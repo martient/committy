@@ -8,5 +8,6 @@ pub mod linter;
 pub mod logger;
 pub mod release;
 pub mod telemetry;
+pub mod tui;
 pub mod update;
 pub mod version;

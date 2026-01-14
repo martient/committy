@@ -5,3 +5,4 @@ pub mod group_commit;
 pub mod lint;
 pub mod lint_message;
 pub mod tag;
+pub mod tui;
