@@ -80,11 +80,16 @@ impl MultiPackageDetector {
                     current_path.display()
                 );
 
-                // Make path relative to repo root
-                pkg.path = current_path
+                // Make path relative to repo root and normalize root to "." for display
+                let relative_path = current_path
                     .strip_prefix(repo_root)
-                    .unwrap_or(current_path)
-                    .to_path_buf();
+                    .unwrap_or(current_path);
+
+                pkg.path = if relative_path.as_os_str().is_empty() {
+                    PathBuf::from(".")
+                } else {
+                    relative_path.to_path_buf()
+                };
 
                 // Q6: Detect both workspace root and members, mark relationship
                 packages.push(pkg.clone());
@@ -101,12 +106,18 @@ impl MultiPackageDetector {
                     )?;
                 }
 
-                // Don't recurse into detected packages (they're handled)
-                return Ok(());
+                // Only allow deeper traversal from the repo root; otherwise stop here
+                if current_path != repo_root {
+                    return Ok(());
+                }
+
+                break;
             }
         }
 
-        // If no package detected, recurse into subdirectories
+        // Recurse into subdirectories when appropriate. If a package was detected at the
+        // repository root we still want to scan siblings (other top-level packages). For
+        // detected non-root packages we return early above.
         if current_path.is_dir() {
             for entry in fs::read_dir(current_path)? {
                 let entry = entry?;
