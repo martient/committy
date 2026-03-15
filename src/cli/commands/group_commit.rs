@@ -2,12 +2,13 @@ use crate::ai::{AiCommitSuggestion, LlmClient, LlmError, OllamaClient, OpenRoute
 use crate::cli::Command;
 use crate::error::CliError;
 use crate::git::format_commit_message;
-use crate::git::list_changed_files;
-use crate::linter::check_message_format;
+use crate::git::{discover_repository_from, list_changed_files_from};
+use crate::linter::check_message_format_for_repo;
 use git2::Repository;
 use serde::Serialize;
 use std::env;
 use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::Command as ProcCommand;
 use structopt::StructOpt;
 
@@ -29,6 +30,8 @@ pub struct PlanGroup {
     pub commit_type: String,
     pub files: Vec<String>,
     pub suggested_message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub issues: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -36,6 +39,7 @@ pub struct GroupCommitPlanResult {
     pub command: String,
     pub mode: String,
     pub ok: bool,
+    pub dry_run: bool,
     pub groups: Vec<PlanGroup>,
     pub errors: Option<Vec<String>>,
 }
@@ -54,6 +58,7 @@ pub struct GroupCommitApplyResult {
     pub command: String,
     pub mode: String,
     pub ok: bool,
+    pub dry_run: bool,
     pub groups: Vec<PlanGroup>,
     pub commits: Vec<CommitRecord>,
     pub pushed: Option<bool>,
@@ -77,6 +82,10 @@ pub struct GroupCommitCommand {
     /// Push after apply
     #[structopt(long)]
     push: bool,
+
+    /// Confirm the remote push when --push is used
+    #[structopt(long)]
+    confirm_push: bool,
 
     /// Output format: text or json
     #[structopt(long, default_value = "json", possible_values = &["text", "json"])]
@@ -138,6 +147,9 @@ pub struct GroupCommitCommand {
     /// Allow sending sensitive content to external AI providers
     #[structopt(long = "ai-allow-sensitive")]
     ai_allow_sensitive: bool,
+
+    #[structopt(long, default_value = ".", parse(from_os_str))]
+    repo_path: PathBuf,
 }
 
 impl Default for GroupCommitCommand {
@@ -147,6 +159,7 @@ impl Default for GroupCommitCommand {
             include_unstaged: false,
             auto_stage: false,
             push: false,
+            confirm_push: false,
             output: "json".into(),
             ai: false,
             ai_provider: "openrouter".into(),
@@ -162,6 +175,7 @@ impl Default for GroupCommitCommand {
             ai_file_limit: 20,
             _ai_diff_lines_per_file: 80,
             ai_allow_sensitive: false,
+            repo_path: PathBuf::from("."),
         }
     }
 }
@@ -283,7 +297,16 @@ impl Command for GroupCommitCommand {
     fn execute(&self, _non_interactive: bool) -> Result<(), CliError> {
         match self.mode.as_str() {
             "plan" => {
-                let files = list_changed_files(self.include_unstaged)?;
+                if self.push {
+                    return Err(CliError::InputError(
+                        "--push is only valid in apply mode".to_string(),
+                    ));
+                }
+                let files = list_changed_files_from(&self.repo_path, self.include_unstaged)?;
+                let repo = discover_repository_from(&self.repo_path)?;
+                let repo_path = repo.workdir().ok_or_else(|| {
+                    CliError::GitError(git2::Error::from_str("No working directory"))
+                })?;
                 let mut by_group: std::collections::BTreeMap<GroupName, Vec<String>> = [
                     (GroupName::Docs, vec![]),
                     (GroupName::Tests, vec![]),
@@ -316,6 +339,7 @@ impl Command for GroupCommitCommand {
                         commit_type,
                         files,
                         suggested_message: message,
+                        issues: None,
                     });
                 }
 
@@ -457,7 +481,8 @@ impl Command for GroupCommitCommand {
                                         .to_string()
                                 };
                                 // Lint and fallback
-                                let issues = check_message_format(&candidate);
+                                let issues = check_message_format_for_repo(repo_path, &candidate)
+                                    .map_err(|e| CliError::Generic(e.to_string()))?;
                                 if issues.is_empty() {
                                     g.suggested_message = candidate;
                                 } else {
@@ -471,10 +496,14 @@ impl Command for GroupCommitCommand {
                     }
                 }
 
+                validate_group_messages(repo_path, &mut groups, &mut errors)
+                    .map_err(|e| CliError::Generic(e.to_string()))?;
+
                 let res = GroupCommitPlanResult {
                     command: "group-commit".into(),
                     mode: "plan".into(),
-                    ok: true,
+                    ok: errors.is_empty(),
+                    dry_run: true,
                     groups,
                     errors: if errors.is_empty() {
                         None
@@ -490,8 +519,17 @@ impl Command for GroupCommitCommand {
                 Ok(())
             }
             "apply" => {
+                if self.push && !self.confirm_push {
+                    return Err(CliError::InputError(
+                        "Remote push requires --confirm-push".to_string(),
+                    ));
+                }
+                let repo = discover_repository_from(&self.repo_path)?;
+                let repo_path = repo.workdir().ok_or_else(|| {
+                    CliError::GitError(git2::Error::from_str("No working directory"))
+                })?;
                 // Build groups as in plan
-                let files = list_changed_files(self.include_unstaged)?;
+                let files = list_changed_files_from(&self.repo_path, self.include_unstaged)?;
                 let mut by_group: std::collections::BTreeMap<GroupName, Vec<String>> = [
                     (GroupName::Docs, vec![]),
                     (GroupName::Tests, vec![]),
@@ -524,6 +562,7 @@ impl Command for GroupCommitCommand {
                         commit_type,
                         files,
                         suggested_message: message,
+                        issues: None,
                     });
                 }
 
@@ -657,7 +696,8 @@ impl Command for GroupCommitCommand {
                                         .trim()
                                         .to_string()
                                 };
-                                let issues = check_message_format(&candidate);
+                                let issues = check_message_format_for_repo(repo_path, &candidate)
+                                    .map_err(|e| CliError::Generic(e.to_string()))?;
                                 if issues.is_empty() {
                                     g.suggested_message = candidate;
                                 } else {
@@ -672,9 +712,9 @@ impl Command for GroupCommitCommand {
                 }
 
                 // Helper: quietly run `git` command
-                fn run_git(args: &[&str]) -> Result<(), CliError> {
+                fn run_git(repo_path: &Path, args: &[&str]) -> Result<(), CliError> {
                     let mut cmd = ProcCommand::new("git");
-                    cmd.args(args);
+                    cmd.current_dir(repo_path).args(args);
                     let status = cmd
                         .stdout(std::process::Stdio::null())
                         .stderr(std::process::Stdio::null())
@@ -689,8 +729,8 @@ impl Command for GroupCommitCommand {
                     }
                 }
 
-                fn last_commit_sha() -> Option<String> {
-                    if let Ok(repo) = Repository::discover(std::env::current_dir().ok()?) {
+                fn last_commit_sha(repo_path: &Path) -> Option<String> {
+                    if let Ok(repo) = Repository::discover(repo_path) {
                         if let Ok(head) = repo.head() {
                             if let Ok(commit) = head.peel_to_commit() {
                                 return Some(commit.id().to_string());
@@ -703,21 +743,33 @@ impl Command for GroupCommitCommand {
                 let mut commits: Vec<CommitRecord> = Vec::new();
 
                 // Commit per group
-                for g in &groups {
-                    // Validate message again and fallback to default formatting
-                    let candidate = g.suggested_message.trim().to_string();
-                    let final_msg = if check_message_format(&candidate).is_empty() {
-                        candidate
-                    } else {
-                        // Rebuild from defaults
-                        let short = default_short_for(&g.name);
-                        format_commit_message(&g.commit_type, false, "", short, "")
-                    };
+                for g in &mut groups {
+                    let final_msg = g.suggested_message.trim().to_string();
+                    let issues = check_message_format_for_repo(repo_path, &final_msg)
+                        .map_err(|e| CliError::Generic(e.to_string()))?;
+                    if !issues.is_empty() {
+                        g.issues = Some(issues.clone());
+                        let error_message = format!(
+                            "group {} message failed commit rules: {}",
+                            group_name_str(g.name),
+                            issues.join("; ")
+                        );
+                        errors.push(error_message.clone());
+                        commits.push(CommitRecord {
+                            group: g.name,
+                            message: final_msg,
+                            ok: false,
+                            sha: None,
+                            error: Some(error_message),
+                        });
+                        continue;
+                    }
+                    g.issues = None;
 
                     // Stage only this group's files if requested
                     if self.auto_stage {
                         // Unstage everything back to HEAD, then stage only the group's files
-                        if let Err(e) = run_git(&["reset", "-q", "HEAD", "--"]) {
+                        if let Err(e) = run_git(repo_path, &["reset", "-q", "HEAD", "--"]) {
                             errors.push(format!(
                                 "git reset failed before staging {}: {}",
                                 group_name_str(g.name),
@@ -729,7 +781,7 @@ impl Command for GroupCommitCommand {
                         for f in &g.files {
                             args.push(f.as_str());
                         }
-                        if let Err(e) = run_git(&args) {
+                        if let Err(e) = run_git(repo_path, &args) {
                             errors.push(format!(
                                 "git add failed for group {}: {}",
                                 group_name_str(g.name),
@@ -747,9 +799,9 @@ impl Command for GroupCommitCommand {
                     }
 
                     // Create commit
-                    match crate::git::commit_changes(&final_msg, false) {
+                    match crate::git::commit_changes_in(repo_path, &final_msg, false) {
                         Ok(_) => {
-                            let sha = last_commit_sha();
+                            let sha = last_commit_sha(repo_path);
                             commits.push(CommitRecord {
                                 group: g.name,
                                 message: final_msg.clone(),
@@ -778,14 +830,19 @@ impl Command for GroupCommitCommand {
                 // Optional push
                 let mut pushed: Option<bool> = None;
                 if self.push {
-                    pushed = Some(run_git(&["push"]).is_ok());
+                    let push_ok = run_git(repo_path, &["push"]).is_ok();
+                    if !push_ok {
+                        errors.push("git push failed".to_string());
+                    }
+                    pushed = Some(push_ok);
                 }
 
-                let ok = commits.iter().all(|c| c.ok);
+                let ok = commits.iter().all(|c| c.ok) && errors.is_empty();
                 let res = GroupCommitApplyResult {
                     command: "group-commit".into(),
                     mode: "apply".into(),
                     ok,
+                    dry_run: false,
                     groups: groups.clone(),
                     commits,
                     pushed,
@@ -805,4 +862,28 @@ impl Command for GroupCommitCommand {
             _ => Err(CliError::Generic("invalid mode".into())),
         }
     }
+}
+
+fn validate_group_messages(
+    repo_path: &Path,
+    groups: &mut [PlanGroup],
+    errors: &mut Vec<String>,
+) -> Result<(), CliError> {
+    for group in groups.iter_mut() {
+        let issues = check_message_format_for_repo(repo_path, &group.suggested_message)
+            .map_err(|e| CliError::Generic(e.to_string()))?;
+        if issues.is_empty() {
+            group.issues = None;
+            continue;
+        }
+
+        group.issues = Some(issues.clone());
+        errors.push(format!(
+            "group {} message failed commit rules: {}",
+            group_name_str(group.name),
+            issues.join("; ")
+        ));
+    }
+
+    Ok(())
 }

@@ -1,11 +1,11 @@
-use std::env;
-
 use crate::version::VersionManager;
 use crate::{config, error::CliError};
-use git2::{FetchOptions, Oid, PushOptions, RemoteCallbacks, Repository};
+use git2::{Oid, Repository};
 use log::{debug, error, info};
 use regex::Regex;
 use semver::Version;
+use std::path::Path;
+use std::process::Command;
 use structopt::StructOpt;
 
 #[derive(Clone, Debug, StructOpt)]
@@ -24,7 +24,7 @@ pub struct TagGeneratorOptions {
     release_branches: String,
 
     #[structopt(long, default_value = ".", help = "Source directory")]
-    source: String,
+    pub(crate) source: String,
 
     #[structopt(long, help = "Perform a dry run without creating tags")]
     dry_run: bool,
@@ -61,6 +61,9 @@ pub struct TagGeneratorOptions {
     #[structopt(long, help = "Publish the new tag after calculation")]
     publish: bool,
 
+    #[structopt(long, help = "Confirm publishing the tag to remote")]
+    confirm_publish: bool,
+
     #[structopt(long, help = "Fetch tags from remote before calculation")]
     fetch: bool,
 
@@ -69,6 +72,24 @@ pub struct TagGeneratorOptions {
         help = "Do not fetch tags from remote before calculation"
     )]
     no_fetch: bool,
+}
+
+impl TagGeneratorOptions {
+    pub fn dry_run(&self) -> bool {
+        self.dry_run
+    }
+
+    pub fn publish_requested(&self) -> bool {
+        self.publish
+    }
+
+    pub fn confirm_publish(&self) -> bool {
+        self.confirm_publish
+    }
+
+    pub fn will_publish_remote(&self) -> bool {
+        self.publish && self.confirm_publish && !self.not_publish
+    }
 }
 
 pub struct TagGenerator {
@@ -84,6 +105,7 @@ pub struct TagGenerator {
     force_without_change: bool,
     tag_message: String,
     not_publish: bool,
+    publish_remote: bool,
     fetch: bool,
     bump_config_files: bool,
     pub current_tag: String,
@@ -109,11 +131,8 @@ impl TagGenerator {
             none_string_token: options.none_string_token,
             force_without_change: options.force_without_change,
             tag_message: options.tag_message.unwrap_or_default(),
-            not_publish: if options.publish {
-                false
-            } else {
-                options.not_publish
-            },
+            not_publish: options.not_publish || !options.publish,
+            publish_remote: options.publish && options.confirm_publish && !options.not_publish,
             // default to fetching unless --no-fetch is explicitly passed; --fetch enforces true
             fetch: if options.fetch {
                 true
@@ -129,6 +148,10 @@ impl TagGenerator {
 
     fn should_fetch(&self) -> bool {
         self.fetch
+    }
+
+    fn should_publish_remote(&self) -> bool {
+        self.publish_remote && !self.not_publish
     }
 
     pub fn run(&mut self) -> Result<(), CliError> {
@@ -213,39 +236,14 @@ impl TagGenerator {
     fn fetch_tags(&self, repo: &Repository) -> Result<(), CliError> {
         debug!("Fetching tags from remote");
         match repo.find_remote("origin") {
-            Ok(mut remote) => {
-                let mut callbacks = RemoteCallbacks::new();
-
-                callbacks.credentials(|_url, username_from_url, _allowed_types| {
-                    git2::Cred::ssh_key(
-                        username_from_url.unwrap_or("git"),
-                        None,
-                        std::path::Path::new(&format!(
-                            "{}/.ssh/id_rsa",
-                            std::env::var("HOME").unwrap()
-                        )),
-                        None,
-                    )
-                });
-
-                let mut fetch_options = FetchOptions::new();
-                fetch_options.remote_callbacks(callbacks);
-
-                remote.fetch(&["refs/tags/*:refs/tags/*"], Some(&mut fetch_options), None)
-                    .map_err(|e| {
-                        error!("Failed to fetch tags from remote: {e}");
-                        match e.code() {
-                            git2::ErrorCode::Auth => {
-                                error!("Authentication error. Please ensure your credentials are set up correctly.");
-                                error!("For SSH: Ensure your SSH key is added to the ssh-agent or located at ~/.ssh/id_rsa");
-                                error!("For HTTPS: Check your Git credential helper or use a personal access token.");
-                                error!("Debug info: SSH_AUTH_SOCK={:?}, HOME={:?}", env::var("SSH_AUTH_SOCK"), env::var("HOME"));
-                                error!("Remote URL: {:?}", remote.url());
-                            },
-                            _ => error!("Unexpected error occurred. Please check your network connection and repository permissions."),
-                        }
-                        CliError::from(e)
-                    })
+            Ok(_) => {
+                let repo_path = self.repo_root(repo)?;
+                run_git(
+                    repo_path,
+                    &["fetch", "origin", "refs/tags/*:refs/tags/*"],
+                    "fetch tags from remote",
+                )
+                .inspect_err(|e| error!("{e}"))
             }
             Err(e) if e.code() == git2::ErrorCode::NotFound => {
                 debug!("No remote 'origin' found, skipping tag fetch");
@@ -554,72 +552,38 @@ impl TagGenerator {
             return Ok(());
         }
 
-        let signature = repo.signature()?;
-        let tree_id = {
-            let mut index = repo.index()?;
-            for file in updated_files {
-                index.add_path(std::path::Path::new(file))?;
-            }
-            index.write()?;
-            index.write_tree()?
-        };
+        let repo_path = self.repo_root(repo)?;
+        let mut add_args = vec!["add", "--"];
+        for file in updated_files {
+            add_args.push(file.as_str());
+        }
+        run_git(repo_path, &add_args, "stage version updates")?;
 
-        let tree = repo.find_tree(tree_id)?;
-        let parent_commit = repo.head()?.peel_to_commit()?;
         let version_without_v = new_version.trim_start_matches('v');
         let message = format!("chore: bump version to {version_without_v}");
-
-        repo.commit(
-            Some("HEAD"),
-            &signature,
-            &signature,
-            &message,
-            &tree,
-            &[&parent_commit],
+        run_git(
+            repo_path,
+            &["commit", "-m", &message],
+            "create version bump commit",
         )?;
 
-        // Push the commit to remote if we're not in dry run mode and not set to not publish
-        if !self.dry_run && !self.not_publish {
+        // Push the commit to remote only when publishing has been explicitly confirmed
+        if !self.dry_run && self.should_publish_remote() {
             info!("🔄 Pushing version bump commit to remote");
             match repo.find_remote("origin") {
-                Ok(mut remote) => {
-                    let mut callbacks = RemoteCallbacks::new();
-                    callbacks.credentials(|_url, username_from_url, _allowed_types| {
-                        git2::Cred::ssh_key(
-                            username_from_url.unwrap_or("git"),
-                            None,
-                            std::path::Path::new(&format!(
-                                "{}/.ssh/id_rsa",
-                                std::env::var("HOME").unwrap()
-                            )),
-                            None,
-                        )
-                    });
-
-                    let mut push_options = PushOptions::new();
-                    push_options.remote_callbacks(callbacks);
-
+                Ok(_) => {
                     let current_branch = self.get_current_branch(repo)?;
-                    let refspec = format!("refs/heads/{current_branch}");
-
-                    match remote.push(&[&refspec], Some(&mut push_options)) {
-                        Ok(_) => {
-                            debug!("Successfully pushed commit to remote branch {current_branch}");
-                            info!(
-                                "✅ Pushed version bump commit to remote branch {current_branch}"
-                            );
-                        }
-                        Err(e) => {
-                            error!("Failed to push commit to remote: {e}");
-                            if e.code() == git2::ErrorCode::Auth {
-                                error!(
-                                    "Authentication error. Please ensure your SSH key is set up correctly."
-                                );
-                                error!("You may need to add your SSH key to the ssh-agent or use HTTPS with a personal access token.");
-                            }
-                            return Err(e.into());
-                        }
-                    }
+                    run_git(
+                        repo_path,
+                        &[
+                            "push",
+                            "origin",
+                            &format!("HEAD:refs/heads/{current_branch}"),
+                        ],
+                        "push version bump commit to remote",
+                    )?;
+                    debug!("Successfully pushed commit to remote branch {current_branch}");
+                    info!("✅ Pushed version bump commit to remote branch {current_branch}");
                 }
                 Err(e) if e.code() == git2::ErrorCode::NotFound => {
                     debug!("Remote 'origin' not found, skipping push");
@@ -633,8 +597,7 @@ impl TagGenerator {
 
     pub fn create_and_push_tag(&self, repo: &Repository, new_tag: &str) -> Result<(), CliError> {
         debug!("Creating and pushing new tag: {new_tag}");
-        let head = repo.head()?.peel_to_commit()?;
-        let signature = repo.signature()?;
+        let repo_path = self.repo_root(repo)?;
 
         let tag_message = if !self.tag_message.is_empty() {
             &self.tag_message
@@ -642,43 +605,22 @@ impl TagGenerator {
             new_tag
         };
 
-        // Create tag
-        repo.tag(new_tag, head.as_object(), &signature, tag_message, false)?;
+        run_git(
+            repo_path,
+            &["tag", "-a", new_tag, "-m", tag_message],
+            "create tag",
+        )?;
 
-        // Only try to push if not in dry run mode and not explicitly set to not publish
-        if !self.dry_run && !self.not_publish {
+        // Only try to push when publishing has been explicitly confirmed
+        if !self.dry_run && self.should_publish_remote() {
             match repo.find_remote("origin") {
-                Ok(mut remote) => {
-                    let mut callbacks = RemoteCallbacks::new();
-                    callbacks.credentials(|_url, username_from_url, _allowed_types| {
-                        git2::Cred::ssh_key(
-                            username_from_url.unwrap_or("git"),
-                            None,
-                            std::path::Path::new(&format!(
-                                "{}/.ssh/id_rsa",
-                                std::env::var("HOME").unwrap()
-                            )),
-                            None,
-                        )
-                    });
-
-                    let mut push_options = PushOptions::new();
-                    push_options.remote_callbacks(callbacks);
-
-                    let refspec = format!("refs/tags/{new_tag}");
-                    match remote.push(&[&refspec], Some(&mut push_options)) {
-                        Ok(_) => debug!("Successfully pushed tag {new_tag} to remote"),
-                        Err(e) => {
-                            error!("Failed to push tag {new_tag} to remote: {e}");
-                            if e.code() == git2::ErrorCode::Auth {
-                                error!(
-                                    "Authentication error. Please ensure your SSH key is set up correctly."
-                                );
-                                error!("You may need to add your SSH key to the ssh-agent or use HTTPS with a personal access token.");
-                            }
-                            return Err(e.into());
-                        }
-                    }
+                Ok(_) => {
+                    run_git(
+                        repo_path,
+                        &["push", "origin", &format!("refs/tags/{new_tag}")],
+                        "push tag to remote",
+                    )?;
+                    debug!("Successfully pushed tag {new_tag} to remote");
                 }
                 Err(e) if e.code() == git2::ErrorCode::NotFound => {
                     debug!("Remote 'origin' not found, skipping push");
@@ -689,6 +631,31 @@ impl TagGenerator {
 
         Ok(())
     }
+
+    fn repo_root<'a>(&self, repo: &'a Repository) -> Result<&'a Path, CliError> {
+        repo.workdir()
+            .ok_or_else(|| CliError::GitError(git2::Error::from_str("No working directory")))
+    }
+}
+
+fn run_git(repo_path: &Path, args: &[&str], action: &str) -> Result<(), CliError> {
+    let output = Command::new("git")
+        .current_dir(repo_path)
+        .args(args)
+        .output()
+        .map_err(CliError::IoError)?;
+
+    if output.status.success() {
+        return Ok(());
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let detail = if stderr.is_empty() {
+        format!("git {:?} failed", args)
+    } else {
+        stderr
+    };
+    Err(CliError::Generic(format!("Failed to {action}: {detail}")))
 }
 
 #[cfg(test)]
@@ -764,6 +731,7 @@ mod tests {
             force_without_change: false,
             tag_message: None,
             publish: false,
+            confirm_publish: false,
             not_publish: true,
             fetch: false,
             no_fetch: true,

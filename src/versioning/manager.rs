@@ -24,7 +24,7 @@ impl BumpType {
 }
 
 /// Information about a version update
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VersionUpdate {
     /// Package name
     pub package_name: String,

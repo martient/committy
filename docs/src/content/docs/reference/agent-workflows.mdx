@@ -1,0 +1,120 @@
+---
+title: Agent Workflows
+description: Prompt-first recipes for AI coding agents using Committy
+sidebar:
+  label: agent workflows
+  order: 55
+---
+
+## Overview
+
+Committy can be embedded directly in system prompts or skills when you want an agent to manage branches, commits, and history quality without scraping human-oriented terminal text.
+
+Preferred sequence:
+
+1. Run a `--dry-run --output json` preview.
+2. Inspect the JSON payload.
+3. Rerun without `--dry-run` only if the plan looks correct.
+4. Require explicit confirmation for any remote mutation.
+5. Use `--repo-path` when the agent should operate on a checkout other than its current shell directory.
+
+## Branch recipe
+
+Preview a branch creation:
+
+```bash
+committy --non-interactive branch \
+  --type feat \
+  --ticket AI42 \
+  --subject "agent hardening" \
+  --dry-run \
+  --output json
+```
+
+Apply it:
+
+```bash
+committy --non-interactive branch \
+  --type feat \
+  --ticket AI42 \
+  --subject "agent hardening" \
+  --output json
+```
+
+Suggested prompt snippet:
+
+```text
+Use Committy for branch creation. Prefer structured flags: `committy --non-interactive branch --type <type> --ticket <ticket> --subject <subject> --dry-run --output json`.
+If `ok` is true and `branch_name` matches the intended scope, rerun without `--dry-run`.
+Do not create the branch if the JSON payload contains `errors`.
+```
+
+## Single-commit recipe
+
+Preview a conventional commit:
+
+```bash
+committy --non-interactive commit \
+  --type feat \
+  --scope agent \
+  --message "add prompt-first branch planning" \
+  --dry-run \
+  --output json
+```
+
+Apply it:
+
+```bash
+committy --non-interactive commit \
+  --type feat \
+  --scope agent \
+  --message "add prompt-first branch planning" \
+  --output json
+```
+
+Suggested prompt snippet:
+
+```text
+Use Committy to compose commits. Always preview with `--dry-run --output json` first.
+Inspect `message`, `commit_type`, `scope`, and `workflow`.
+Only create the commit if `ok` is true and the planned message matches the diff.
+```
+
+## Log-quality recipe
+
+Audit commits before a push or release:
+
+```bash
+committy --non-interactive lint --repo-path . --output json
+```
+
+Preview grouped commits for dirty worktrees:
+
+```bash
+committy --non-interactive group-commit --mode plan --output json
+```
+
+Publish only with explicit confirmation:
+
+```bash
+committy --non-interactive group-commit --mode apply --push --confirm-push --output json
+committy --non-interactive tag --publish --confirm-publish --output json
+```
+
+Suggested prompt snippet:
+
+```text
+Before any push or release, run `committy lint --output json`.
+If lint reports issues, stop and summarize them.
+For grouped commits or tags, require explicit confirmation flags before any remote push.
+```
+
+## JSON fields to rely on
+
+- `command`: the command that produced the payload.
+- `ok`: whether the command-level operation succeeded.
+- `dry_run`: whether the payload is only a preview.
+- `errors`: command-level errors or warnings when present.
+- `mode`: present on multi-mode commands such as `group-commit`.
+
+Command-specific fields remain stable on top of that envelope.

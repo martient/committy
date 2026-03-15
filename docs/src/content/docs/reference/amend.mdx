@@ -5,7 +5,7 @@ description: How to amend a commit
 
 ## Overview
 
-Interactively amend the previous commit using conventional commit prompts. This command is interactive-only.
+Amend the previous commit using conventional commit prompts or non-interactive flags.
 Amends the previous commit message and optionally content.
 
 ## Usage
@@ -13,22 +13,38 @@ Amends the previous commit message and optionally content.
 ```bash
 # Interactive prompts for type, breaking-change, scope, short and long messages
 committy amend
+
+# Non-interactive amend without staged changes
+committy --non-interactive amend \
+  --repo-path /path/to/repo \
+  --type fix \
+  --message "adjust release note wording"
+
+# Agent preview
+committy --non-interactive amend \
+  --type fix \
+  --message "adjust release note wording" \
+  --dry-run \
+  --output json
 ```
 
 ## Behavior
 
-- __Interactive only__: running with `--non-interactive` returns an error.
-- Prompts for: type, breaking change, scope, short message, and long message.
+- Prompts for: type, breaking change, scope, short message, and long message when flags are omitted interactively.
+- Non-interactive mode requires `--type` and `--message`.
 - Formats final message as `<type>(<scope>)!: <short>\n\n<long>` as applicable, then amends the last commit.
 - __No staged changes required__: you can amend just the message. If there are staged changes, they will be included.
 - Uses the current index (if any) for the amended commit tree.
-- For non-interactive amend, use `committy commit --amend` with flags; note that path __requires staged changes__.
+- `--dry-run --output json` returns `command`, `ok`, `dry_run`, `message`, `commit_type`, `scope`, `breaking_change`, and `errors`.
+- `--repo-path` lets agents amend a repository without changing the shell working directory.
+- Repo `commit_rules` are enforced the same way as `commit` and `lint`.
 
 ## Exit codes
 
 - __0__: success
-- __1__: generic error (e.g., non-interactive usage, git errors)
+- __1__: generic error (e.g., git errors)
+- __3__: lint issues found
 
 ## Notes
 
-- Use regular `committy commit` for new commits. Use `--amend` when you only want to adjust the previous commit message/content.
+- Use regular `committy commit` for new commits. `committy amend` and `committy commit --amend` now share the same amend behavior.

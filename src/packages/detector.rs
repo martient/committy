@@ -81,9 +81,7 @@ impl MultiPackageDetector {
                 );
 
                 // Make path relative to repo root and normalize root to "." for display
-                let relative_path = current_path
-                    .strip_prefix(repo_root)
-                    .unwrap_or(current_path);
+                let relative_path = current_path.strip_prefix(repo_root).unwrap_or(current_path);
 
                 pkg.path = if relative_path.as_os_str().is_empty() {
                     PathBuf::from(".")

@@ -4,6 +4,7 @@ use git2::Repository;
 use serial_test::serial;
 use std::env;
 use std::fs;
+use std::path::PathBuf;
 use tempfile::TempDir;
 
 fn setup_test_repo() -> (TempDir, Repository) {
@@ -39,6 +40,17 @@ fn setup_test_repo() -> (TempDir, Repository) {
     (temp_dir, repo)
 }
 
+fn stable_current_dir() -> PathBuf {
+    match env::current_dir() {
+        Ok(path) => path,
+        Err(_) => {
+            let fallback = env::temp_dir();
+            env::set_current_dir(&fallback).unwrap();
+            fallback
+        }
+    }
+}
+
 #[test]
 #[serial]
 fn test_repository_discovery_from_subdirectory() -> Result<(), CliError> {
@@ -58,7 +70,7 @@ fn test_repository_discovery_from_subdirectory() -> Result<(), CliError> {
     index.write().unwrap();
 
     // Change to the deep subdirectory
-    let original_dir = env::current_dir().unwrap();
+    let original_dir = stable_current_dir();
     env::set_current_dir(temp_dir.path()).unwrap();
     env::set_current_dir("src/deep/path").unwrap();
 
@@ -80,7 +92,7 @@ fn test_repository_not_found() {
     let temp_dir = TempDir::new().unwrap();
 
     // Change to the temporary directory
-    let original_dir = env::current_dir().unwrap();
+    let original_dir = stable_current_dir();
     env::set_current_dir(temp_dir.path()).unwrap();
 
     // Verify we get an appropriate error when there's no git repository
@@ -135,7 +147,7 @@ fn test_staged_deleted_file() -> Result<(), CliError> {
     index.write().unwrap();
 
     // Change to the repository directory to ensure we're in the right context
-    let original_dir = env::current_dir().unwrap();
+    let original_dir = stable_current_dir();
     env::set_current_dir(temp_dir.path()).unwrap();
 
     // Verify that has_staged_changes detects the deleted file
@@ -177,7 +189,7 @@ fn test_no_staged_changes() -> Result<(), CliError> {
     .unwrap();
 
     // Change to the repository directory to ensure we're in the right context
-    let original_dir = env::current_dir().unwrap();
+    let original_dir = stable_current_dir();
     env::set_current_dir(temp_dir.path()).unwrap();
 
     // Verify no staged changes are detected
@@ -203,7 +215,7 @@ fn test_unstaged_changes_only() -> Result<(), CliError> {
     fs::write(&test_file, "test content").unwrap();
 
     // Change to the repository directory
-    let original_dir = env::current_dir().unwrap();
+    let original_dir = stable_current_dir();
     env::set_current_dir(temp_dir.path()).unwrap();
 
     // Verify no staged changes are detected
@@ -229,7 +241,7 @@ fn test_repository_discovery_without_staged_changes() -> Result<(), CliError> {
     fs::create_dir_all(&subdir_path).unwrap();
 
     // Change to the deep subdirectory
-    let original_dir = env::current_dir().unwrap();
+    let original_dir = stable_current_dir();
     env::set_current_dir(temp_dir.path()).unwrap();
     env::set_current_dir("src/deep/path").unwrap();
 
@@ -263,7 +275,7 @@ fn test_commit_from_subdirectory() -> Result<(), CliError> {
     index.write().unwrap();
 
     // Change to the deep subdirectory
-    let original_dir = env::current_dir().unwrap();
+    let original_dir = stable_current_dir();
     env::set_current_dir(temp_dir.path()).unwrap();
 
     // Create a new repository object from the current directory
@@ -285,7 +297,7 @@ fn test_commit_from_subdirectory() -> Result<(), CliError> {
 
     // Verify the commit was created with the correct message
     let head_commit = repo.head()?.peel_to_commit()?;
-    let head_message = head_commit.message().unwrap_or("");
+    let head_message = head_commit.message().unwrap_or("").trim_end_matches('\n');
     assert_eq!(
         head_message, commit_message,
         "Expected commit message '{commit_message}' but got '{head_message}'"

@@ -1,6 +1,7 @@
 mod common;
 
 use serde_json::Value;
+use std::fs;
 use std::process::Command as StdCommand;
 use tempfile::tempdir;
 
@@ -37,6 +38,28 @@ fn setup_repo() -> tempfile::TempDir {
         .expect("Failed to create initial commit");
 
     dir
+}
+
+fn write_commit_rules_config(dir: &std::path::Path, body: &str) {
+    fs::create_dir_all(dir.join(".committy")).expect("Failed to create .committy");
+    fs::write(
+        dir.join(".committy/config.toml"),
+        format!(
+            r#"packages = []
+
+[repository]
+name = "group-repo"
+type = "single-package"
+
+[versioning]
+strategy = "independent"
+
+[commit_rules]
+{body}
+"#
+        ),
+    )
+    .expect("Failed to write commit rules config");
 }
 
 #[test]
@@ -92,6 +115,33 @@ fn test_group_commit_apply_without_auto_stage_only_staged_committed() {
 }
 
 #[test]
+fn test_group_commit_apply_with_push_requires_confirmation() {
+    let temp_dir = setup_repo();
+
+    let docs_file = temp_dir.path().join("docs/PUSH.md");
+    std::fs::create_dir_all(docs_file.parent().unwrap()).unwrap();
+    std::fs::write(&docs_file, "Push test\n").unwrap();
+    let _ = StdCommand::new("git")
+        .args(["add", "docs/PUSH.md"])
+        .current_dir(&temp_dir)
+        .output()
+        .expect("Failed to stage PUSH.md");
+
+    common::committy_cmd()
+        .current_dir(&temp_dir)
+        .env("RUST_LOG", "off")
+        .arg("--non-interactive")
+        .arg("group-commit")
+        .arg("--mode")
+        .arg("apply")
+        .arg("--push")
+        .arg("--output")
+        .arg("json")
+        .assert()
+        .failure();
+}
+
+#[test]
 fn test_group_commit_apply_with_push_sets_pushed_false_without_remote() {
     let temp_dir = setup_repo();
 
@@ -113,6 +163,7 @@ fn test_group_commit_apply_with_push_sets_pushed_false_without_remote() {
         .arg("--mode")
         .arg("apply")
         .arg("--push")
+        .arg("--confirm-push")
         .arg("--output")
         .arg("json")
         .assert()
@@ -121,8 +172,10 @@ fn test_group_commit_apply_with_push_sets_pushed_false_without_remote() {
     let output = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
     let v: Value = serde_json::from_str(output.trim()).unwrap();
     assert_eq!(v["mode"], Value::String("apply".into()));
+    assert_eq!(v["dry_run"], Value::Bool(false));
     // No remote -> push should fail and be false
     assert_eq!(v["pushed"], Value::Bool(false));
+    assert_eq!(v["ok"], Value::Bool(false));
 }
 
 #[test]
@@ -162,6 +215,7 @@ fn test_group_commit_plan_json_offline() {
 
     assert_eq!(v["command"], Value::String("group-commit".into()));
     assert_eq!(v["mode"], Value::String("plan".into()));
+    assert_eq!(v["dry_run"], Value::Bool(true));
     assert_eq!(v["ok"], Value::Bool(true));
 
     let groups = v["groups"].as_array().expect("groups array");
@@ -200,6 +254,41 @@ fn test_group_commit_plan_json_offline() {
 }
 
 #[test]
+fn test_group_commit_plan_supports_repo_path_without_chdir() {
+    let temp_dir = setup_repo();
+    let runner_dir = tempdir().expect("Failed to create runner directory");
+
+    let docs_file = temp_dir.path().join("docs/README.md");
+    std::fs::create_dir_all(docs_file.parent().unwrap()).unwrap();
+    std::fs::write(&docs_file, "# Docs\n").unwrap();
+
+    let _ = StdCommand::new("git")
+        .args(["add", "--all"])
+        .current_dir(&temp_dir)
+        .output()
+        .expect("Failed to stage files");
+
+    let assert = common::committy_cmd()
+        .current_dir(&runner_dir)
+        .env("RUST_LOG", "off")
+        .arg("--non-interactive")
+        .arg("group-commit")
+        .arg("--repo-path")
+        .arg(temp_dir.path())
+        .arg("--mode")
+        .arg("plan")
+        .arg("--output")
+        .arg("json")
+        .assert()
+        .success();
+
+    let output = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    let v: Value = serde_json::from_str(output.trim()).unwrap();
+    assert_eq!(v["command"], Value::String("group-commit".into()));
+    assert_eq!(v["ok"], Value::Bool(true));
+}
+
+#[test]
 fn test_group_commit_apply_auto_stage_creates_commits() {
     let temp_dir = setup_repo();
 
@@ -231,6 +320,7 @@ fn test_group_commit_apply_auto_stage_creates_commits() {
     let v: Value = serde_json::from_str(output.trim()).unwrap();
 
     assert_eq!(v["mode"], Value::String("apply".into()));
+    assert_eq!(v["dry_run"], Value::Bool(false));
     assert_eq!(v["ok"], Value::Bool(true));
 
     let commits = v["commits"].as_array().expect("commits array");
@@ -254,4 +344,97 @@ fn test_group_commit_apply_auto_stage_creates_commits() {
     let log_s = String::from_utf8_lossy(&log.stdout);
     assert!(log_s.contains("update docs") || log_s.contains("docs:"));
     assert!(log_s.contains("misc maintenance") || log_s.contains("chore:"));
+}
+
+#[test]
+fn test_group_commit_plan_reports_repo_rule_violations() {
+    let temp_dir = setup_repo();
+    write_commit_rules_config(temp_dir.path(), "require_body = true");
+
+    let docs_file = temp_dir.path().join("docs/RULES.md");
+    std::fs::create_dir_all(docs_file.parent().unwrap()).unwrap();
+    std::fs::write(&docs_file, "rules\n").unwrap();
+
+    let _ = StdCommand::new("git")
+        .args(["add", "docs/RULES.md"])
+        .current_dir(&temp_dir)
+        .output()
+        .expect("Failed to stage RULES.md");
+
+    let assert = common::committy_cmd()
+        .current_dir(&temp_dir)
+        .env("RUST_LOG", "off")
+        .arg("--non-interactive")
+        .arg("group-commit")
+        .arg("--mode")
+        .arg("plan")
+        .arg("--output")
+        .arg("json")
+        .assert()
+        .success();
+
+    let output = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    let v: Value = serde_json::from_str(output.trim()).unwrap();
+    assert_eq!(v["ok"], Value::Bool(false));
+    assert!(v["errors"].as_array().unwrap().iter().any(|entry| {
+        entry
+            .as_str()
+            .unwrap_or("")
+            .contains("Commit body is required by repository configuration")
+    }));
+    assert!(v["groups"][0]["issues"].as_array().is_some());
+}
+
+#[test]
+fn test_group_commit_apply_refuses_invalid_repo_rule_messages() {
+    let temp_dir = setup_repo();
+    write_commit_rules_config(temp_dir.path(), "require_body = true");
+
+    let docs_file = temp_dir.path().join("docs/APPLY.md");
+    std::fs::create_dir_all(docs_file.parent().unwrap()).unwrap();
+    std::fs::write(&docs_file, "apply rules\n").unwrap();
+
+    let _ = StdCommand::new("git")
+        .args(["add", "docs/APPLY.md"])
+        .current_dir(&temp_dir)
+        .output()
+        .expect("Failed to stage APPLY.md");
+
+    let before = StdCommand::new("git")
+        .args(["rev-list", "--count", "HEAD"])
+        .current_dir(&temp_dir)
+        .output()
+        .expect("Failed to count commits");
+
+    let assert = common::committy_cmd()
+        .current_dir(&temp_dir)
+        .env("RUST_LOG", "off")
+        .arg("--non-interactive")
+        .arg("group-commit")
+        .arg("--mode")
+        .arg("apply")
+        .arg("--output")
+        .arg("json")
+        .assert()
+        .success();
+
+    let output = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    let v: Value = serde_json::from_str(output.trim()).unwrap();
+    assert_eq!(v["ok"], Value::Bool(false));
+    assert_eq!(v["commits"][0]["ok"], Value::Bool(false));
+    assert!(v["commits"][0]["error"]
+        .as_str()
+        .unwrap_or("")
+        .contains("Commit body is required by repository configuration"));
+
+    let after = StdCommand::new("git")
+        .args(["rev-list", "--count", "HEAD"])
+        .current_dir(&temp_dir)
+        .output()
+        .expect("Failed to count commits");
+
+    assert_eq!(
+        before.stdout, after.stdout,
+        "invalid group-commit messages must not create commits"
+    );
 }

@@ -15,9 +15,10 @@ use crate::versioning::unified::UnifiedVersioning;
 use log::debug;
 use log::info;
 use regex::Regex;
+use serde::Serialize;
 use serde_json::Value;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
@@ -45,18 +46,54 @@ pub struct TagCommand {
     /// Update dependency references during tagging
     #[structopt(long, help = "Update dependency references in other packages")]
     update_deps: bool,
+
+    #[structopt(long, default_value = ".", parse(from_os_str))]
+    repo_path: PathBuf,
+}
+
+#[derive(Debug, Serialize)]
+struct TagCommandOutput {
+    command: String,
+    ok: bool,
+    dry_run: bool,
+    errors: Option<Vec<String>>,
+    old_tag: Option<String>,
+    new_tag: Option<String>,
+    pre_release: Option<bool>,
+    published: bool,
 }
 
 impl Command for TagCommand {
     fn execute(&self, non_interactive: bool) -> Result<(), CliError> {
-        if git::has_staged_changes()? {
+        if self.tag_options.publish_requested() && !self.tag_options.confirm_publish() {
+            return Err(CliError::InputError(
+                "Publishing a tag requires --confirm-publish".to_string(),
+            ));
+        }
+
+        let default_repo_path = PathBuf::from(".");
+        let effective_repo_path = if self.repo_path != default_repo_path {
+            self.repo_path.clone()
+        } else {
+            PathBuf::from(&self.tag_options.source)
+        };
+
+        if self.tag_options.source != "."
+            && self.repo_path != default_repo_path
+            && Path::new(&self.tag_options.source) != self.repo_path.as_path()
+        {
+            return Err(CliError::InputError(
+                "Use either --repo-path or --source for tag repository selection, not both"
+                    .to_string(),
+            ));
+        }
+
+        if git::has_staged_changes_from(&effective_repo_path)? {
             return Err(CliError::StagedChanges);
         }
 
         // Load merged config to detect multi-package mode
-        let current_dir = std::env::current_dir()
-            .map_err(|e| CliError::InputError(format!("Failed to get current directory: {}", e)))?;
-        let merged_config = MergedConfig::load(&current_dir).ok();
+        let merged_config = MergedConfig::load(&effective_repo_path).ok();
 
         // Check if multi-package mode
         let is_multi_package = merged_config
@@ -64,16 +101,25 @@ impl Command for TagCommand {
             .map(|c| c.is_multi_package())
             .unwrap_or(false);
 
+        let mut tag_options = self.tag_options.clone();
+        tag_options.source = effective_repo_path.display().to_string();
+
         if let Some(name) = &self.name {
             // Explicit tag name provided - use legacy flow
             let version_manager =
-                git::TagGenerator::new(self.tag_options.clone(), self.bump_config_files);
+                git::TagGenerator::new(tag_options.clone(), self.bump_config_files);
             version_manager.create_and_push_tag(&version_manager.open_repository()?, name)?;
+            let payload = TagCommandOutput {
+                command: "tag".into(),
+                ok: true,
+                dry_run: self.tag_options.dry_run(),
+                errors: None,
+                old_tag: None,
+                new_tag: Some(name.clone()),
+                pre_release: None,
+                published: self.tag_options.will_publish_remote(),
+            };
             if self.output == "json" {
-                let payload = serde_json::json!({
-                    "ok": true,
-                    "new_tag": name,
-                });
                 println!("{}", serde_json::to_string(&payload).unwrap());
             } else {
                 println!("Tag {name} created successfully!");
@@ -83,22 +129,26 @@ impl Command for TagCommand {
             self.execute_multi_package(
                 non_interactive,
                 merged_config.as_ref().unwrap(),
-                &current_dir,
+                &effective_repo_path,
             )?;
         } else if non_interactive {
             // In non-interactive mode, auto-calculate and act based on options
             let mut version_manager =
-                git::TagGenerator::new(self.tag_options.clone(), self.bump_config_files);
+                git::TagGenerator::new(tag_options.clone(), self.bump_config_files);
             version_manager.run()?;
 
             // Print the calculated tag so callers/tests can consume it
+            let payload = TagCommandOutput {
+                command: "tag".into(),
+                ok: true,
+                dry_run: self.tag_options.dry_run(),
+                errors: None,
+                old_tag: Some(version_manager.current_tag.clone()),
+                new_tag: Some(version_manager.new_tag.clone()),
+                pre_release: Some(version_manager.is_pre_release),
+                published: self.tag_options.will_publish_remote(),
+            };
             if self.output == "json" {
-                let payload = serde_json::json!({
-                    "ok": true,
-                    "old_tag": version_manager.current_tag,
-                    "new_tag": version_manager.new_tag,
-                    "pre_release": version_manager.is_pre_release,
-                });
                 println!("{}", serde_json::to_string(&payload).unwrap());
             } else {
                 println!("{}", version_manager.new_tag);
@@ -113,16 +163,19 @@ impl Command for TagCommand {
                 info!("Abort");
                 return Ok(());
             }
-            let mut version_manager =
-                git::TagGenerator::new(self.tag_options.clone(), self.bump_config_files);
+            let mut version_manager = git::TagGenerator::new(tag_options, self.bump_config_files);
             version_manager.run()?;
+            let payload = TagCommandOutput {
+                command: "tag".into(),
+                ok: true,
+                dry_run: self.tag_options.dry_run(),
+                errors: None,
+                old_tag: Some(version_manager.current_tag.clone()),
+                new_tag: Some(version_manager.new_tag.clone()),
+                pre_release: Some(version_manager.is_pre_release),
+                published: self.tag_options.will_publish_remote(),
+            };
             if self.output == "json" {
-                let payload = serde_json::json!({
-                    "ok": true,
-                    "old_tag": version_manager.current_tag,
-                    "new_tag": version_manager.new_tag,
-                    "pre_release": version_manager.is_pre_release,
-                });
                 println!("{}", serde_json::to_string(&payload).unwrap());
             } else {
                 println!("Tag {} created successfully!", version_manager.new_tag);
@@ -170,7 +223,7 @@ impl TagCommand {
         );
 
         // Step 1: Get commit log since last tag
-        let repo = git::discover_repository()?;
+        let repo = git::discover_repository_from(repo_path)?;
         let commit_log = self.get_commit_log_since_last_tag(&repo)?;
         debug!("Commit log since last tag:\n{}", commit_log);
 
@@ -441,31 +494,24 @@ impl TagCommand {
 
     /// Create a git tag and optionally push to remote
     fn create_and_push_tag(&self, repo: &git2::Repository, tag_name: &str) -> Result<(), CliError> {
-        let head = repo.head().map_err(CliError::from)?;
-        let target_oid = head
-            .target()
-            .ok_or_else(|| CliError::Generic("Failed to get HEAD target".to_string()))?;
-
-        // Create annotated tag
-        repo.tag(
-            tag_name,
-            &repo.find_object(target_oid, None).map_err(CliError::from)?,
-            &repo.signature().unwrap_or_else(|_| {
-                git2::Signature::now("committy", "committy@example.com")
-                    .unwrap_or_else(|_| panic!("Failed to create signature"))
-            }),
-            "",
-            false,
-        )
-        .map_err(CliError::from)?;
+        let repo_path = repo
+            .workdir()
+            .ok_or_else(|| CliError::GitError(git2::Error::from_str("No working directory")))?;
+        self.run_git(
+            repo_path,
+            &["tag", "-a", tag_name, "-m", tag_name],
+            "create tag",
+        )?;
 
         info!("✅ Tag '{}' created locally", tag_name);
 
         // Try to push to remote
-        if let Err(e) = self.push_tag_to_remote(repo, tag_name) {
-            debug!("Failed to push tag to remote: {}", e);
-        } else {
-            info!("📤 Tag '{}' pushed to remote", tag_name);
+        if self.tag_options.will_publish_remote() {
+            if let Err(e) = self.push_tag_to_remote(repo, tag_name) {
+                debug!("Failed to push tag to remote: {}", e);
+            } else {
+                info!("📤 Tag '{}' pushed to remote", tag_name);
+            }
         }
 
         Ok(())
@@ -473,30 +519,34 @@ impl TagCommand {
 
     /// Push tag to remote repository
     fn push_tag_to_remote(&self, repo: &git2::Repository, tag_name: &str) -> Result<(), CliError> {
-        let mut remote = repo.find_remote("origin").map_err(CliError::from)?;
+        repo.find_remote("origin").map_err(CliError::from)?;
+        let repo_path = repo
+            .workdir()
+            .ok_or_else(|| CliError::GitError(git2::Error::from_str("No working directory")))?;
+        self.run_git(
+            repo_path,
+            &["push", "origin", &format!("refs/tags/{tag_name}")],
+            "push tag to remote",
+        )
+    }
 
-        let refspec = format!("refs/tags/{}:refs/tags/{}", tag_name, tag_name);
+    fn run_git(&self, repo_path: &Path, args: &[&str], action: &str) -> Result<(), CliError> {
+        let output = std::process::Command::new("git")
+            .current_dir(repo_path)
+            .args(args)
+            .output()
+            .map_err(CliError::IoError)?;
 
-        let mut callbacks = git2::RemoteCallbacks::new();
-        callbacks.credentials(|_url, username_from_url, _allowed_types| {
-            git2::Cred::ssh_key(
-                username_from_url.unwrap_or("git"),
-                None,
-                std::path::Path::new(&format!(
-                    "{}/.ssh/id_rsa",
-                    std::env::var("HOME").unwrap_or_else(|_| ".".to_string())
-                )),
-                None,
-            )
-        });
+        if output.status.success() {
+            return Ok(());
+        }
 
-        let mut push_options = git2::PushOptions::new();
-        push_options.remote_callbacks(callbacks);
-
-        remote
-            .push(&[&refspec], Some(&mut push_options))
-            .map_err(CliError::from)?;
-
-        Ok(())
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let detail = if stderr.is_empty() {
+            format!("git {:?} failed", args)
+        } else {
+            stderr
+        };
+        Err(CliError::Generic(format!("Failed to {action}: {detail}")))
     }
 }

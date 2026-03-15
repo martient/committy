@@ -9,11 +9,12 @@ use crate::versioning::manager::{BumpType, VersionManager, VersionUpdate};
 use crate::versioning::unified::UnifiedVersioning;
 use anyhow::{Context, Result};
 use log::{debug, info};
+use serde::Serialize;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 /// Result of workflow orchestration
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct WorkflowResult {
     /// Detected scopes from staged files
     pub scopes: Vec<String>,

@@ -3,10 +3,11 @@
 use crate::config::repository::RepositoryConfig;
 use anyhow::Result;
 use log::debug;
+use serde::Serialize;
 use std::path::{Path, PathBuf};
 
 /// Information about a dependency update
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct DependencyUpdate {
     /// File that needs updating
     pub file_path: PathBuf,

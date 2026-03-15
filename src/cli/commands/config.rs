@@ -6,6 +6,7 @@ use crate::config::repository::RepositoryConfig;
 use crate::error::CliError;
 use anyhow::Result;
 use colored::Colorize;
+use serde_json::json;
 use std::path::Path;
 use structopt::StructOpt;
 
@@ -21,6 +22,8 @@ pub enum ConfigSubcommand {
     Validate {
         #[structopt(short, long, help = "Show detailed information")]
         verbose: bool,
+        #[structopt(long, default_value = "text", possible_values = &["text", "json"])]
+        output: String,
         #[structopt(
             long,
             help = "Repository path",
@@ -33,6 +36,8 @@ pub enum ConfigSubcommand {
     Show {
         #[structopt(short, long, help = "Show detailed information including sources")]
         verbose: bool,
+        #[structopt(long, default_value = "text", possible_values = &["text", "json"])]
+        output: String,
         #[structopt(
             long,
             help = "Repository path",
@@ -46,23 +51,87 @@ pub enum ConfigSubcommand {
 impl Command for ConfigCommand {
     fn execute(&self, _non_interactive: bool) -> Result<(), CliError> {
         match &self.subcommand {
-            ConfigSubcommand::Validate { verbose, repo_path } => {
-                validate(repo_path, *verbose).map_err(|e| CliError::Generic(e.to_string()))
+            ConfigSubcommand::Validate {
+                verbose,
+                output,
+                repo_path,
+            } => {
+                validate(repo_path, *verbose, output).map_err(|e| CliError::Generic(e.to_string()))
             }
-            ConfigSubcommand::Show { verbose, repo_path } => {
-                show(repo_path, *verbose).map_err(|e| CliError::Generic(e.to_string()))
-            }
+            ConfigSubcommand::Show {
+                verbose,
+                output,
+                repo_path,
+            } => show(repo_path, *verbose, output).map_err(|e| CliError::Generic(e.to_string())),
         }
     }
 }
 
 /// Validate repository configuration
-pub fn validate(repo_path: &Path, verbose: bool) -> Result<()> {
+pub fn validate(repo_path: &Path, verbose: bool, output: &str) -> Result<()> {
+    let config_path = RepositoryConfig::get_config_path(repo_path)?;
+    let repo_config = RepositoryConfig::try_load(repo_path)?;
+
+    if output == "json" {
+        let warnings = repo_config
+            .as_ref()
+            .map(|config| collect_validation_warnings(repo_path, config))
+            .unwrap_or_default();
+
+        let payload = if let Some(config) = repo_config {
+            json!({
+                "command": "config",
+                "mode": "validate",
+                "ok": true,
+                "dry_run": false,
+                "errors": serde_json::Value::Null,
+                "config_found": true,
+                "single_package_mode": false,
+                "repo_path": repo_path.display().to_string(),
+                "config_path": config_path.display().to_string(),
+                "repository": {
+                    "name": config.repository.name,
+                    "type": config.repository.repo_type,
+                    "versioning_strategy": config.versioning.strategy,
+                    "package_count": config.packages.len(),
+                    "dependency_count": config.dependencies.len(),
+                    "scope_mapping_count": config.scopes.mappings.len(),
+                },
+                "packages": config.packages,
+                "dependencies": config.dependencies,
+                "scope_mappings": config.scopes.mappings,
+                "warnings": warnings,
+                "verbose": verbose,
+            })
+        } else {
+            json!({
+                "command": "config",
+                "mode": "validate",
+                "ok": true,
+                "dry_run": false,
+                "errors": serde_json::Value::Null,
+                "config_found": false,
+                "single_package_mode": true,
+                "repo_path": repo_path.display().to_string(),
+                "config_path": config_path.display().to_string(),
+                "repository": serde_json::Value::Null,
+                "packages": Vec::<serde_json::Value>::new(),
+                "dependencies": Vec::<serde_json::Value>::new(),
+                "scope_mappings": Vec::<serde_json::Value>::new(),
+                "warnings": Vec::<String>::new(),
+                "verbose": verbose,
+            })
+        };
+
+        println!("{}", serde_json::to_string(&payload)?);
+        return Ok(());
+    }
+
     println!("{}", "Validating repository configuration...".bold());
     println!();
 
     // Try to load repository config
-    let repo_config = match RepositoryConfig::try_load(repo_path)? {
+    let repo_config = match repo_config {
         Some(config) => config,
         None => {
             println!("{}", "✓ No .committy/config.toml found".green());
@@ -164,29 +233,7 @@ pub fn validate(repo_path: &Path, verbose: bool) -> Result<()> {
     }
 
     // Warnings
-    let mut warnings = Vec::new();
-
-    // Check for packages without version files
-    for pkg in &repo_config.packages {
-        let pkg_path = repo_path.join(&pkg.path);
-        let version_file_path = pkg_path.join(&pkg.version_file);
-        if !version_file_path.exists() {
-            warnings.push(format!(
-                "Version file not found: {} (package: {})",
-                pkg.version_file, pkg.name
-            ));
-        }
-    }
-
-    // Check for dependency targets
-    for dep in &repo_config.dependencies {
-        for target in &dep.targets {
-            let target_path = repo_path.join(&target.file);
-            if !target_path.exists() {
-                warnings.push(format!("Dependency target not found: {}", target.file));
-            }
-        }
-    }
+    let warnings = collect_validation_warnings(repo_path, &repo_config);
 
     if !warnings.is_empty() {
         println!("{}", "Warnings:".yellow().bold());
@@ -201,8 +248,30 @@ pub fn validate(repo_path: &Path, verbose: bool) -> Result<()> {
 }
 
 /// Show merged configuration (repository + user)
-pub fn show(repo_path: &Path, verbose: bool) -> Result<()> {
+pub fn show(repo_path: &Path, verbose: bool, output: &str) -> Result<()> {
     let merged = MergedConfig::load(repo_path)?;
+
+    if output == "json" {
+        let payload = json!({
+            "command": "config",
+            "mode": "show",
+            "ok": true,
+            "dry_run": false,
+            "errors": serde_json::Value::Null,
+            "repo_path": repo_path.display().to_string(),
+            "multi_package": merged.is_multi_package(),
+            "effective_patterns": {
+                "major_regex": merged.get_major_regex(),
+                "minor_regex": merged.get_minor_regex(),
+                "patch_regex": merged.get_patch_regex(),
+            },
+            "repository_config": merged.repository_config(),
+            "user_config": merged.user_config(),
+            "verbose": verbose,
+        });
+        println!("{}", serde_json::to_string(&payload)?);
+        return Ok(());
+    }
 
     println!("{}", "Configuration Hierarchy:".bold());
     println!();
@@ -270,6 +339,32 @@ pub fn show(repo_path: &Path, verbose: bool) -> Result<()> {
     Ok(())
 }
 
+fn collect_validation_warnings(repo_path: &Path, repo_config: &RepositoryConfig) -> Vec<String> {
+    let mut warnings = Vec::new();
+
+    for pkg in &repo_config.packages {
+        let pkg_path = repo_path.join(&pkg.path);
+        let version_file_path = pkg_path.join(&pkg.version_file);
+        if !version_file_path.exists() {
+            warnings.push(format!(
+                "Version file not found: {} (package: {})",
+                pkg.version_file, pkg.name
+            ));
+        }
+    }
+
+    for dep in &repo_config.dependencies {
+        for target in &dep.targets {
+            let target_path = repo_path.join(&target.file);
+            if !target_path.exists() {
+                warnings.push(format!("Dependency target not found: {}", target.file));
+            }
+        }
+    }
+
+    warnings
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -281,7 +376,7 @@ mod tests {
     #[test]
     fn test_validate_without_config() {
         let temp_dir = TempDir::new().unwrap();
-        let result = validate(temp_dir.path(), false);
+        let result = validate(temp_dir.path(), false, "text");
         assert!(result.is_ok());
     }
 
@@ -310,14 +405,14 @@ mod tests {
 
         config.save(temp_dir.path()).unwrap();
 
-        let result = validate(temp_dir.path(), false);
+        let result = validate(temp_dir.path(), false, "text");
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_show_config() {
         let temp_dir = TempDir::new().unwrap();
-        let result = show(temp_dir.path(), false);
+        let result = show(temp_dir.path(), false, "text");
         assert!(result.is_ok());
     }
 }

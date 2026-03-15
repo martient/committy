@@ -129,6 +129,7 @@ fn test_beta_increments_counter_not_version() {
         .arg("tag")
         .arg("--no-fetch")
         .arg("--publish")
+        .arg("--confirm-publish")
         .arg("--prerelease")
         .arg("--prerelease-suffix")
         .arg("beta")

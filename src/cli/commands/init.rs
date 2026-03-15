@@ -7,6 +7,7 @@ use crate::error::CliError;
 use crate::packages::detector::MultiPackageDetector;
 use colored::Colorize;
 use log::{debug, info};
+use serde_json::json;
 use std::fs;
 use std::path::Path;
 use structopt::StructOpt;
@@ -20,7 +21,12 @@ pub struct InitCommand {
     #[structopt(short, long, help = "Show what would be created (don't write files)")]
     pub dry_run: bool,
 
-    #[structopt(long, help = "Output format: text or json", default_value = "text")]
+    #[structopt(
+        long,
+        help = "Output format: text or json",
+        default_value = "text",
+        possible_values = &["text", "json"]
+    )]
     pub output: String,
 }
 
@@ -34,7 +40,7 @@ impl Command for InitCommand {
                 return Err(CliError::Generic(
                     "Repository already initialized with .committy/config.toml".to_string(),
                 ));
-            } else {
+            } else if self.output != "json" {
                 println!(
                     "{}",
                     "Warning: .committy/config.toml already exists".yellow()
@@ -43,8 +49,9 @@ impl Command for InitCommand {
             }
         }
 
-        // Detect packages
-        println!("{}", "Detecting packages in repository...".bold());
+        if self.output != "json" {
+            println!("{}", "Detecting packages in repository...".bold());
+        }
         let current_dir = std::env::current_dir()
             .map_err(|e| CliError::InputError(format!("Failed to get current directory: {}", e)))?;
         let detector = MultiPackageDetector::new().with_max_depth(5);
@@ -53,21 +60,37 @@ impl Command for InitCommand {
             .map_err(|e| CliError::Generic(format!("Package detection failed: {}", e)))?;
 
         if detected_packages.is_empty() {
-            println!(
-                "{}",
-                "No packages detected. Create at least one package before initializing.".yellow()
-            );
+            if self.output == "json" {
+                self.output_json_result(
+                    None,
+                    false,
+                    false,
+                    false,
+                    Some(vec![
+                        "No packages detected. Create at least one package before initializing."
+                            .to_string(),
+                    ]),
+                )?;
+            } else {
+                println!(
+                    "{}",
+                    "No packages detected. Create at least one package before initializing."
+                        .yellow()
+                );
+            }
             return Ok(());
         }
 
-        println!(
-            "{}",
-            format!("Detected {} package(s):", detected_packages.len()).green()
-        );
-        for pkg in &detected_packages {
-            println!("  ● {} ({})", pkg.name.bold(), pkg.manager.name());
+        if self.output != "json" {
+            println!(
+                "{}",
+                format!("Detected {} package(s):", detected_packages.len()).green()
+            );
+            for pkg in &detected_packages {
+                println!("  ● {} ({})", pkg.name.bold(), pkg.manager.name());
+            }
+            println!();
         }
-        println!();
 
         // Gather configuration
         let repo_name = if non_interactive {
@@ -167,15 +190,18 @@ impl Command for InitCommand {
             .map_err(|e| CliError::Generic(format!("Failed to serialize config: {}", e)))?;
 
         // Display configuration
-        println!("{}", "Configuration to be created:".bold());
-        println!("{}", toml_string);
-        println!();
+        if self.output != "json" {
+            println!("{}", "Configuration to be created:".bold());
+            println!("{}", toml_string);
+            println!();
+        }
 
         // Handle dry-run
         if self.dry_run {
-            println!("{}", "Dry run - no files created".yellow());
             if self.output == "json" {
-                self.output_json_result(&config, false)?;
+                self.output_json_result(Some(&config), false, true, false, None)?;
+            } else {
+                println!("{}", "Dry run - no files created".yellow());
             }
             return Ok(());
         }
@@ -189,7 +215,11 @@ impl Command for InitCommand {
                 .map_err(|e| CliError::InputError(format!("Failed to read input: {}", e)))?;
             let trimmed = input.trim().to_lowercase();
             if trimmed == "no" || trimmed == "n" {
-                println!("{}", "Cancelled".yellow());
+                if self.output == "json" {
+                    self.output_json_result(Some(&config), false, false, true, None)?;
+                } else {
+                    println!("{}", "Cancelled".yellow());
+                }
                 return Ok(());
             }
         }
@@ -203,20 +233,19 @@ impl Command for InitCommand {
             CliError::Generic(format!("Failed to write .committy/config.toml: {}", e))
         })?;
 
-        println!(
-            "{}",
-            "✓ Configuration created: .committy/config.toml"
-                .green()
-                .bold()
-        );
-        println!(
-            "{}",
-            "Tip: Run 'committy config validate' to verify".dimmed()
-        );
-
-        // Output JSON if requested
         if self.output == "json" {
-            self.output_json_result(&config, true)?;
+            self.output_json_result(Some(&config), true, true, false, None)?;
+        } else {
+            println!(
+                "{}",
+                "✓ Configuration created: .committy/config.toml"
+                    .green()
+                    .bold()
+            );
+            println!(
+                "{}",
+                "Tip: Run 'committy config validate' to verify".dimmed()
+            );
         }
 
         info!("Repository initialized successfully");
@@ -225,22 +254,38 @@ impl Command for InitCommand {
 }
 
 impl InitCommand {
-    fn output_json_result(&self, config: &RepositoryConfig, created: bool) -> Result<(), CliError> {
-        let result = serde_json::json!({
-            "ok": true,
-            "created": created,
-            "config": {
+    fn output_json_result(
+        &self,
+        config: Option<&RepositoryConfig>,
+        created: bool,
+        ok: bool,
+        cancelled: bool,
+        errors: Option<Vec<String>>,
+    ) -> Result<(), CliError> {
+        let config_json = config.map(|config| {
+            json!({
                 "repository": config.repository.name,
+                "repository_type": config.repository.repo_type,
                 "versioning_strategy": config.versioning.strategy,
-                "packages": config.packages.len(),
-                "scopes": config.scopes.mappings.len(),
-            },
+                "packages": config.packages,
+                "scope_mappings": config.scopes.mappings,
+            })
+        });
+
+        let result = json!({
+            "command": "init",
+            "ok": ok,
+            "dry_run": self.dry_run,
+            "errors": errors,
+            "created": created,
+            "cancelled": cancelled,
+            "config": config_json,
             "path": ".committy/config.toml",
         });
         println!(
             "{}",
-            serde_json::to_string_pretty(&result)
-                .map_err(|e| { CliError::Generic(format!("Failed to serialize JSON: {}", e)) })?
+            serde_json::to_string(&result)
+                .map_err(|e| CliError::Generic(format!("Failed to serialize JSON: {}", e)))?
         );
         Ok(())
     }

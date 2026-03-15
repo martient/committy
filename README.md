@@ -46,6 +46,7 @@ committy
 
 - Full docs live in `docs/` (Astro + Starlight): `docs/src/content/docs/`
 - Key references:
+  - Agent Workflows: `docs/src/content/docs/reference/agent-workflows.mdx`
   - Group Commit: `docs/src/content/docs/reference/group-commit.mdx`
   - AI Flags & Security: `docs/src/content/docs/reference/ai-flags.mdx`
 
@@ -55,6 +56,12 @@ committy
 
 ```shell
 committy amend
+
+# Non-interactive amend preview
+committy --non-interactive amend --type fix --message "adjust release note wording" --dry-run --output json
+
+# The same amend flow also works through commit flags
+committy --non-interactive commit --amend --type fix --message "adjust release note wording" --dry-run --output json
 ```
 
 #### Demo
@@ -78,8 +85,11 @@ committy -s "change the api version" amend
 ### Output format
 
 - Use `--output json|text` on commands that support it.
+- `branch --dry-run --output json` returns a machine-readable branch plan.
+- `commit --dry-run --output json` returns the resolved commit message and workflow preview.
 - `lint --output json` prints `{ ok, count, issues }`.
 - `tag --output json` (with `--dry-run`) prints `{ ok, new_tag }`.
+- `--repo-path` lets agents target another checkout without changing `cwd`.
 
 ### Verbosity
 
@@ -96,11 +106,22 @@ committy -s "change the api version" amend
 
 - `--fetch` / `--no-fetch` controls whether tags are fetched from remote before calculation.
 - Default: fetch is enabled unless `--no-fetch` is provided.
+- Remote publishing is explicit: use `--publish --confirm-publish` to push tags or version-bump commits.
 - Example (no remote access):
 
 ```bash
 committy --non-interactive tag --no-fetch --dry-run --not-publish --output json
 ```
+
+### Agent-friendly preview flow
+
+- Preview first, then apply:
+  - `committy --non-interactive branch --type feat --ticket AI42 --subject "agent flow" --dry-run --output json`
+  - `committy --non-interactive commit --type feat --message "add agent flow" --dry-run --output json`
+  - `committy --non-interactive group-commit --mode plan --output json`
+- Remote mutations require confirmation:
+  - `committy --non-interactive group-commit --mode apply --push --confirm-push --output json`
+  - `committy --non-interactive tag --publish --confirm-publish --output json`
 
 ### Stable lint exit codes (for CI)
 
@@ -115,6 +136,11 @@ committy --non-interactive lint --repo-path . --output json || {
   code=$?; if [ $code -eq 3 ]; then echo "Lint issues"; else exit $code; fi
 }
 ```
+
+### Native git verification
+
+- For signed commit/tag and SSH identity smoke testing, run `./scripts/verify_native_git_e2e.sh`.
+- The harness is documented in `docs/NATIVE_GIT_E2E.md` and can also be triggered from the manual GitHub Actions workflow `Native Git Verification`.
 
 ### Configurable version bump rules
 

@@ -1,5 +1,6 @@
 pub mod ai;
 pub mod cli;
+pub mod clock;
 pub mod config;
 pub mod dependency;
 pub mod error;

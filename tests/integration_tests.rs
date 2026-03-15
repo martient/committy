@@ -227,7 +227,9 @@ fn test_lint_json_exit_code_and_payload() {
 
     let output = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
     let v: serde_json::Value = serde_json::from_str(output.trim()).unwrap();
+    assert_eq!(v["command"], serde_json::json!("lint"));
     assert_eq!(v["ok"], serde_json::json!(false));
+    assert_eq!(v["dry_run"], serde_json::json!(false));
     assert_eq!(v["count"], serde_json::json!(1));
 
     cleanup(temp_dir);
@@ -259,8 +261,11 @@ fn test_tag_json_dry_run_output_non_interactive() {
 
     let output = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
     let v: serde_json::Value = serde_json::from_str(output.trim()).unwrap();
+    assert_eq!(v["command"], serde_json::json!("tag"));
     assert_eq!(v["ok"], serde_json::json!(true));
+    assert_eq!(v["dry_run"], serde_json::json!(true));
     assert_eq!(v["new_tag"], serde_json::json!("v0.1.0"));
+    assert_eq!(v["published"], serde_json::json!(false));
 
     cleanup(temp_dir);
 }

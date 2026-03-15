@@ -2,6 +2,7 @@ include!(concat!(env!("OUT_DIR"), "/sentry_dsn.rs"));
 
 mod ai;
 mod cli;
+mod clock;
 mod config;
 mod dependency;
 mod error;
@@ -26,10 +27,11 @@ use structopt::StructOpt;
 
 use crate::cli::commands::commit::CommitCommand;
 use crate::cli::{CliCommand, Command};
+use crate::clock::{current_time, should_check_update, should_remind_metrics};
 use crate::config::Config;
 use crate::error::CliError;
 use crate::update::Updater;
-use chrono::{DateTime, Duration};
+use chrono::DateTime;
 
 #[derive(StructOpt)]
 #[structopt(
@@ -132,13 +134,11 @@ fn run(config: &mut Config) -> Result<()> {
         return Ok(());
     }
 
-    let current_time = DateTime::parse_from_rfc3339("2025-01-08T17:49:53+01:00").unwrap();
-    let one_week = Duration::days(7);
-    let one_day = Duration::days(1);
+    let current_time: DateTime<_> = current_time()?;
     let mut config_updated = false;
 
     // Show metrics reminder if enabled and it's been a week
-    if config.metrics_enabled && current_time - config.last_metrics_reminder >= one_week {
+    if config.metrics_enabled && should_remind_metrics(config.last_metrics_reminder, current_time) {
         logger::info(
             " Metrics collection is enabled to help improve Committy. You can opt-out anytime with --metrics-toggle",
         );
@@ -189,7 +189,7 @@ fn run(config: &mut Config) -> Result<()> {
     if !non_interactive
         && !opt.check_update
         && !opt.update
-        && current_time - config.last_update_check >= one_day
+        && should_check_update(config.last_update_check, current_time)
     {
         let mut updater = Updater::new(env!("CARGO_PKG_VERSION"))?;
         updater.with_prerelease(true);
