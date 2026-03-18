@@ -1,9 +1,10 @@
 use crate::cli::Command;
 use crate::error::CliError;
-use crate::linter::check_message_format;
+use crate::linter::check_message_format_for_repo;
 use serde::Serialize;
 use std::fs;
 use std::io::{self, Read};
+use std::path::PathBuf;
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
@@ -23,6 +24,10 @@ pub struct LintMessageCommand {
     /// Output format: text or json
     #[structopt(long, default_value = "text", possible_values = &["text", "json"])]
     output: String,
+
+    /// Repository path for loading repository lint rules
+    #[structopt(long, default_value = ".", parse(from_os_str))]
+    repo_path: PathBuf,
 }
 
 impl Command for LintMessageCommand {
@@ -40,19 +45,26 @@ impl Command for LintMessageCommand {
             buf
         };
 
-        let issues = check_message_format(&msg);
+        let issues = check_message_format_for_repo(&self.repo_path, &msg)
+            .map_err(|e| CliError::Generic(e.to_string()))?;
 
         if self.output == "json" {
             #[derive(Serialize)]
             struct LintMessageOutput<'a> {
+                command: &'static str,
                 ok: bool,
+                dry_run: bool,
                 count: usize,
                 issues: &'a [String],
+                errors: Option<Vec<String>>,
             }
             let payload = LintMessageOutput {
+                command: "lint-message",
                 ok: issues.is_empty(),
+                dry_run: false,
                 count: issues.len(),
                 issues: &issues,
+                errors: None,
             };
             println!("{}", serde_json::to_string(&payload).unwrap());
         } else if issues.is_empty() {

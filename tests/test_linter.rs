@@ -1,5 +1,6 @@
 use committy::linter::CommitLinter;
 use git2::{Repository, Signature};
+use std::fs;
 use tempfile::TempDir;
 mod common;
 
@@ -49,6 +50,33 @@ fn create_tag(repo: &Repository, commit_id: git2::Oid, tag_name: &str) {
         .unwrap();
 }
 
+fn create_lightweight_tag(repo: &Repository, commit_id: git2::Oid, tag_name: &str) {
+    let obj = repo.find_object(commit_id, None).unwrap();
+    repo.tag_lightweight(tag_name, &obj, false).unwrap();
+}
+
+fn write_commit_rules_config(dir: &std::path::Path, body: &str) {
+    fs::create_dir_all(dir.join(".committy")).unwrap();
+    fs::write(
+        dir.join(".committy/config.toml"),
+        format!(
+            r#"packages = []
+
+[repository]
+name = "lint-repo"
+type = "single-package"
+
+[versioning]
+strategy = "independent"
+
+[commit_rules]
+{body}
+"#
+        ),
+    )
+    .unwrap();
+}
+
 #[test]
 fn test_linter_with_tags() {
     common::setup_test_env();
@@ -80,6 +108,7 @@ fn test_linter_with_multiple_tags() {
     create_tag(&repo, commit1, "v0.1.0");
 
     // Create more commits and another tag
+    create_commit(&repo, "invalid message before latest tag");
     let commit2 = create_commit(&repo, "feat: another feature");
     create_tag(&repo, commit2, "v0.2.0");
 
@@ -93,6 +122,29 @@ fn test_linter_with_multiple_tags() {
 
     assert_eq!(issues.len(), 1);
     assert!(issues[0].message.contains("invalid: wrong type"));
+}
+
+#[test]
+fn test_linter_with_lightweight_latest_tag() {
+    common::setup_test_env();
+    let (temp_dir, repo) = setup_test_repo();
+
+    let commit1 = create_commit(&repo, "feat: initial commit");
+    create_tag(&repo, commit1, "v0.1.0");
+
+    create_commit(&repo, "invalid message before lightweight tag");
+    let commit2 = create_commit(&repo, "feat: release boundary");
+    create_lightweight_tag(&repo, commit2, "v0.2.0");
+
+    create_commit(&repo, "fix: valid after tag");
+
+    let linter = CommitLinter::new(temp_dir.path().to_str().unwrap()).unwrap();
+    let issues = linter.check_commits_since_last_tag().unwrap();
+
+    assert!(
+        issues.is_empty(),
+        "issues after latest lightweight tag should be ignored: {issues:?}"
+    );
 }
 
 #[test]
@@ -142,4 +194,47 @@ fn test_linter_with_empty_repo() {
     let issues = linter.check_commits_since_last_tag().unwrap();
 
     assert!(issues.is_empty());
+}
+
+#[test]
+fn test_linter_respects_custom_commit_type_rules() {
+    common::setup_test_env();
+    let (temp_dir, repo) = setup_test_repo();
+    write_commit_rules_config(
+        temp_dir.path(),
+        r#"allowed_types = ["feat"]
+
+[[commit_rules.custom_types]]
+name = "wip"
+description = "Work in progress"
+bump = "none""#,
+    );
+
+    create_commit(&repo, "wip: checkpoint");
+
+    let linter = CommitLinter::new(temp_dir.path().to_str().unwrap()).unwrap();
+    let issues = linter.check_commits_since_last_tag().unwrap();
+
+    assert!(
+        issues.is_empty(),
+        "custom type should be accepted: {issues:?}"
+    );
+}
+
+#[test]
+fn test_linter_respects_require_body_rule() {
+    common::setup_test_env();
+    let (temp_dir, repo) = setup_test_repo();
+    write_commit_rules_config(temp_dir.path(), "require_body = true");
+
+    create_commit(&repo, "feat: missing body");
+
+    let linter = CommitLinter::new(temp_dir.path().to_str().unwrap()).unwrap();
+    let issues = linter.check_commits_since_last_tag().unwrap();
+
+    assert_eq!(issues.len(), 1);
+    assert_eq!(
+        issues[0].issue,
+        "Commit body is required by repository configuration"
+    );
 }

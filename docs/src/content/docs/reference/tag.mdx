@@ -5,14 +5,14 @@ description: How the tag works
 
 ## Overview
 
-Create and push a new semantic version tag based on commit history. Supports explicit tag names or automatic calculation with rich options.
+Create a new semantic version tag based on commit history. Remote publishing is explicit and requires confirmation.
 
 Rejects execution when there are staged changes.
 
 ## Usage
 
 ```bash
-# Interactive: confirm and create next tag
+# Interactive: confirm and create next tag locally
 committy tag
 
 # Non-interactive: auto-calculate and act based on flags
@@ -20,6 +20,9 @@ committy --non-interactive tag --fetch --default-bump minor
 
 # Create a tag with an explicit name (skips calculation)
 committy tag --name v1.2.3
+
+# Publish a tag to origin (explicit + confirmed)
+committy --non-interactive tag --publish --confirm-publish
 
 # Pre-release flow
 committy --non-interactive tag --prerelease --prerelease-suffix beta
@@ -58,15 +61,20 @@ committy --non-interactive tag --bump-files
 - __--force-without-change__
 - __--tag-message__ `<string>`
 - __--not-publish__
+- __--publish__
+  Request publishing to the remote after local tag creation.
+- __--confirm-publish__
+  Required together with `--publish` before any remote push is attempted.
 - __--fetch__
 - __--no-fetch__
 
 ## Behavior
 
 - Errors if there are staged changes.
-- When `--name` is provided: creates and (unless `--not-publish`) pushes that tag immediately.
-- Non-interactive without `--name`: calculates new tag from commit log using regex rules in config and options above, then creates/pushes it.
-- `--bump-files`: updates common version files, commits them (message: `chore: bump version to <x.y.z>`), and pushes commit (unless `--not-publish`).
+- When `--name` is provided: creates that tag locally.
+- Non-interactive without `--name`: calculates the new tag from commit log using regex rules in config and options above, then creates it locally.
+- `--publish --confirm-publish` is required before the tag or any version-bump commit is pushed to `origin`.
+- `--bump-files`: updates common version files and commits them (message: `chore: bump version to <x.y.z>`). Remote push still requires `--publish --confirm-publish`.
 - Fetch behavior: default is fetch unless `--no-fetch`; `--fetch` forces fetch.
 
 ## JSON output
@@ -74,7 +82,13 @@ committy --non-interactive tag --bump-files
 - With `--name`:
 
 ```json
-{ "ok": true, "new_tag": "v1.2.3" }
+{
+  "command": "tag",
+  "ok": true,
+  "dry_run": false,
+  "new_tag": "v1.2.3",
+  "published": false
+}
 ```
 
 - Calculated tag (interactive or non-interactive when `--output json`):
@@ -82,9 +96,12 @@ committy --non-interactive tag --bump-files
 ```json
 {
   "ok": true,
+  "command": "tag",
+  "dry_run": true,
   "old_tag": "v1.2.2",
   "new_tag": "v1.2.3",
-  "pre_release": false
+  "pre_release": false,
+  "published": false
 }
 ```
 
@@ -104,3 +121,7 @@ committy --non-interactive tag --prerelease --prerelease-suffix rc
 
 # Tag without leading 'v'
 committy --non-interactive tag --not-with-v
+
+# Publish after preview
+committy --non-interactive tag --dry-run --output json
+committy --non-interactive tag --publish --confirm-publish --output json

@@ -1,7 +1,10 @@
 pub mod amend;
 pub mod branch;
 pub mod commit;
+pub mod config;
 pub mod group_commit;
+pub mod init;
 pub mod lint;
 pub mod lint_message;
+pub mod packages;
 pub mod tag;

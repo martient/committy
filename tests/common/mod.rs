@@ -1,3 +1,5 @@
+use assert_cmd::cargo::cargo_bin_cmd;
+use assert_cmd::Command;
 use once_cell::sync::Lazy;
 use std::env;
 use std::sync::Once;
@@ -24,4 +26,9 @@ pub fn setup_test_env() {
             Lazy::new(|| tempfile::tempdir().expect("Failed to create temp HOME for tests"));
         env::set_var("HOME", TEST_HOME.path());
     });
+}
+
+#[allow(dead_code)]
+pub fn committy_cmd() -> Command {
+    cargo_bin_cmd!("committy")
 }

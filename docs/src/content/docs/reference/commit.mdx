@@ -9,6 +9,8 @@ Create a conventional commit for your staged changes. Interactive by default; su
 
 Requires staged changes. If no files are staged, the CLI returns an error.
 
+For agent workflows, prefer `--dry-run --output json` first, then rerun without `--dry-run` once the payload looks correct.
+
 ## Usage
 
 ```bash
@@ -26,8 +28,19 @@ committy --non-interactive commit \
 # Amend previous commit (interactive, message-only allowed)
 committy amend
 
-# Amend previous commit via commit flags (requires staged changes)
+# Amend previous commit via amend flags (no staged changes required)
+committy --non-interactive amend --type fix --message "adjust release note wording"
+
+# Amend previous commit via commit flags (message-only allowed)
 committy commit --amend
+
+# Agent preview
+committy --non-interactive commit \
+  --type feat \
+  --scope web \
+  --message "add login flow" \
+  --dry-run \
+  --output json
 ```
 
 ## Flags
@@ -53,13 +66,23 @@ committy commit --amend
 - __--amend__
   Amend the previous commit using the composed message.
 
+- __--dry-run__
+  Resolve the commit message and workflow side effects without creating a git commit.
+
+- __--output__ `<text|json>`
+  Output format. Use `json` for agent/system-prompt integrations.
+
+- __--repo-path__ `<path>`
+  Resolve the target repository without changing the process working directory.
+
 ## Behavior
 
-- Validates git config first; errors if misconfigured.
-- Errors if no staged changes.
+- Errors if no staged changes, unless `--amend` is used.
+- Validates git config before mutating git state.
 - Non-interactive mode requires `--type` and `--message`.
 - Message is formatted as `<type>(<scope>)!: <short>\n\n<long>` depending on provided options.
-- To amend the last commit without staged changes, use `committy amend` (interactive). Using `committy commit --amend` requires staged changes.
+- `--dry-run --output json` returns `command`, `ok`, `dry_run`, `message`, `commit_type`, `scope`, `breaking_change`, and an optional `workflow` preview.
+- `committy amend` and `committy commit --amend` now use the same validation and output flow, including message-only amend when nothing is staged.
 
 ## Examples
 

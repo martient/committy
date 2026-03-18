@@ -25,14 +25,20 @@ impl Command for LintCommand {
                 if self.output == "json" {
                     #[derive(Serialize)]
                     struct LintOutput<'a> {
+                        command: &'static str,
                         ok: bool,
+                        dry_run: bool,
                         count: usize,
                         issues: &'a [crate::linter::CommitIssue],
+                        errors: Option<Vec<String>>,
                     }
                     let payload = LintOutput {
+                        command: "lint",
                         ok: issues.is_empty(),
+                        dry_run: false,
                         count: issues.len(),
                         issues: &issues,
+                        errors: None,
                     };
                     println!("{}", serde_json::to_string(&payload).unwrap());
                 } else if issues.is_empty() {
