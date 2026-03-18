@@ -1,6 +1,5 @@
 mod common;
 
-use assert_cmd::Command;
 use predicates::prelude::*;
 use std::process::Command as StdCommand;
 use tempfile::tempdir;
@@ -56,8 +55,7 @@ fn test_verbosity_quiet_suppresses_info_logs() {
         .expect("Failed to create commit");
 
     // With -q, only errors should be logged; dry run should produce none
-    Command::cargo_bin("committy")
-        .unwrap()
+    common::committy_cmd()
         .current_dir(&temp_dir)
         .env("RUST_LOG", "off")
         .arg("--non-interactive")
@@ -85,8 +83,7 @@ fn test_verbosity_v_shows_debug_logs() {
         .expect("Failed to create commit");
 
     // With -v and --no-fetch, expect debug about skipping fetch due to flag
-    Command::cargo_bin("committy")
-        .unwrap()
+    common::committy_cmd()
         .current_dir(&temp_dir)
         .env("RUST_LOG", "off")
         .arg("--non-interactive")
@@ -114,8 +111,7 @@ fn test_fetch_flag_no_fetch_skips_fetch_path() {
         .output()
         .expect("Failed to create commit");
 
-    Command::cargo_bin("committy")
-        .unwrap()
+    common::committy_cmd()
         .current_dir(&temp_dir)
         .env("RUST_LOG", "off")
         .arg("--non-interactive")
@@ -145,8 +141,7 @@ fn test_fetch_flag_fetch_attempts_fetch_path() {
 
     // With --fetch, we should log that we're fetching tags; since repo has no origin,
     // subsequent message may indicate skipping due to not found, but the "Fetching tags" info should appear
-    Command::cargo_bin("committy")
-        .unwrap()
+    common::committy_cmd()
         .current_dir(&temp_dir)
         .env("RUST_LOG", "off")
         .arg("--non-interactive")
@@ -180,7 +175,7 @@ fn cleanup(temp_dir: tempfile::TempDir) {
 fn test_commit_command_with_valid_input() {
     let temp_dir = setup();
 
-    let mut cmd = Command::cargo_bin("committy").unwrap();
+    let mut cmd = common::committy_cmd();
     cmd.current_dir(&temp_dir)
         .env("RUST_LOG", "info")
         .arg("--non-interactive")
@@ -218,8 +213,7 @@ fn test_lint_json_exit_code_and_payload() {
         .output()
         .expect("Failed to create commit");
 
-    let assert = Command::cargo_bin("committy")
-        .unwrap()
+    let assert = common::committy_cmd()
         .current_dir(&temp_dir)
         .env("RUST_LOG", "off")
         .arg("--non-interactive")
@@ -233,7 +227,9 @@ fn test_lint_json_exit_code_and_payload() {
 
     let output = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
     let v: serde_json::Value = serde_json::from_str(output.trim()).unwrap();
+    assert_eq!(v["command"], serde_json::json!("lint"));
     assert_eq!(v["ok"], serde_json::json!(false));
+    assert_eq!(v["dry_run"], serde_json::json!(false));
     assert_eq!(v["count"], serde_json::json!(1));
 
     cleanup(temp_dir);
@@ -250,8 +246,7 @@ fn test_tag_json_dry_run_output_non_interactive() {
         .output()
         .expect("Failed to create commit");
 
-    let assert = Command::cargo_bin("committy")
-        .unwrap()
+    let assert = common::committy_cmd()
         .current_dir(&temp_dir)
         .env("RUST_LOG", "off")
         .arg("--non-interactive")
@@ -266,8 +261,11 @@ fn test_tag_json_dry_run_output_non_interactive() {
 
     let output = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
     let v: serde_json::Value = serde_json::from_str(output.trim()).unwrap();
+    assert_eq!(v["command"], serde_json::json!("tag"));
     assert_eq!(v["ok"], serde_json::json!(true));
+    assert_eq!(v["dry_run"], serde_json::json!(true));
     assert_eq!(v["new_tag"], serde_json::json!("v0.1.0"));
+    assert_eq!(v["published"], serde_json::json!(false));
 
     cleanup(temp_dir);
 }
@@ -294,8 +292,7 @@ major_regex = '(?im)^(breaking change:|feat(?:\s*\([^)]*\))?!:)'
 "#;
     std::fs::write(&cfg_path, config_toml).unwrap();
 
-    let assert = Command::cargo_bin("committy")
-        .unwrap()
+    let assert = common::committy_cmd()
         .current_dir(&temp_dir)
         .env("COMMITTY_CONFIG_DIR", &cfg_dir)
         .env("RUST_LOG", "off")
@@ -329,8 +326,7 @@ fn test_tag_fix_default_is_patch() {
         .expect("Failed to create commit");
 
     // Default config should treat fix as patch -> v0.0.1
-    let assert = Command::cargo_bin("committy")
-        .unwrap()
+    let assert = common::committy_cmd()
         .current_dir(&temp_dir)
         .env("RUST_LOG", "off")
         .arg("--non-interactive")
@@ -354,7 +350,7 @@ fn test_tag_fix_default_is_patch() {
 fn test_commit_command_with_auto_correction() {
     let temp_dir = setup();
 
-    let mut cmd = Command::cargo_bin("committy").unwrap();
+    let mut cmd = common::committy_cmd();
     cmd.current_dir(&temp_dir)
         .env("RUST_LOG", "info")
         .arg("--non-interactive")
@@ -385,7 +381,7 @@ fn test_commit_command_with_auto_correction() {
 fn test_commit_command_with_invalid_input() {
     let temp_dir = setup();
 
-    let mut cmd = Command::cargo_bin("committy").unwrap();
+    let mut cmd = common::committy_cmd();
     cmd.current_dir(&temp_dir)
         .env("RUST_LOG", "info")
         .arg("--non-interactive")
@@ -405,7 +401,7 @@ fn test_commit_command_with_invalid_input() {
 fn test_commit_with_breaking_change() {
     let temp_dir = setup();
 
-    let mut cmd = Command::cargo_bin("committy").unwrap();
+    let mut cmd = common::committy_cmd();
     cmd.current_dir(&temp_dir)
         .env("RUST_LOG", "info")
         .arg("--non-interactive")

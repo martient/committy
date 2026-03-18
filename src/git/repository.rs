@@ -1,12 +1,17 @@
 use crate::error::CliError;
 use git2::{Config, Repository, StatusOptions, StatusShow};
 use std::env;
+use std::path::Path;
 
 pub fn discover_repository() -> Result<Repository, CliError> {
     let current_dir = env::current_dir()?;
-    log::debug!("Starting repository discovery from: {current_dir:?}");
+    discover_repository_from(&current_dir)
+}
 
-    match Repository::discover(&current_dir) {
+pub fn discover_repository_from(path: &Path) -> Result<Repository, CliError> {
+    log::debug!("Starting repository discovery from: {path:?}");
+
+    match Repository::discover(path) {
         Ok(repo) => {
             // Get the absolute path to the repository root
             let repo_path = repo
@@ -29,7 +34,7 @@ pub fn discover_repository() -> Result<Repository, CliError> {
             }
         }
         Err(e) => {
-            log::error!("Failed to discover repository from {current_dir:?}: {e}");
+            log::error!("Failed to discover repository from {path:?}: {e}");
             Err(CliError::GitError(git2::Error::from_str(
                 "Could not find Git repository in current directory or any parent directories",
             )))
@@ -38,7 +43,12 @@ pub fn discover_repository() -> Result<Repository, CliError> {
 }
 
 pub fn has_staged_changes() -> Result<bool, CliError> {
-    let repo = discover_repository()?;
+    let current_dir = env::current_dir()?;
+    has_staged_changes_from(&current_dir)
+}
+
+pub fn has_staged_changes_from(path: &Path) -> Result<bool, CliError> {
+    let repo = discover_repository_from(path)?;
     let mut opts = StatusOptions::new();
     opts.include_ignored(false)
         .include_untracked(false)
@@ -67,8 +77,17 @@ pub fn has_staged_changes() -> Result<bool, CliError> {
 
 /// List changed files in the repository. If `include_unstaged` is true,
 /// include workdir modifications in addition to index changes.
+#[allow(dead_code)]
 pub fn list_changed_files(include_unstaged: bool) -> Result<Vec<String>, CliError> {
-    let repo = discover_repository()?;
+    let current_dir = env::current_dir()?;
+    list_changed_files_from(&current_dir, include_unstaged)
+}
+
+pub fn list_changed_files_from(
+    path: &Path,
+    include_unstaged: bool,
+) -> Result<Vec<String>, CliError> {
+    let repo = discover_repository_from(path)?;
     let mut opts = StatusOptions::new();
     opts.include_ignored(false)
         .include_untracked(true)
@@ -109,8 +128,14 @@ fn get_config_value(config: &Config, key: &str) -> Option<String> {
     }
 }
 
+#[allow(dead_code)]
 pub fn validate_git_config() -> Result<(), CliError> {
-    let repo = discover_repository()?;
+    let current_dir = env::current_dir()?;
+    validate_git_config_from(&current_dir)
+}
+
+pub fn validate_git_config_from(path: &Path) -> Result<(), CliError> {
+    let repo = discover_repository_from(path)?;
     let config = repo.config()?;
 
     // Try to get user.name from local or global config

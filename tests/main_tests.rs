@@ -1,14 +1,7 @@
 use chrono::{DateTime, Duration};
+use committy::clock::{current_time, should_check_update};
 use std::env;
 use tempfile::TempDir;
-
-// Mock the main functionality for testing
-fn should_check_update(
-    last_check: DateTime<chrono::FixedOffset>,
-    current_time: DateTime<chrono::FixedOffset>,
-) -> bool {
-    current_time - last_check >= Duration::days(1)
-}
 
 #[test]
 fn test_update_check_timing() {
@@ -39,4 +32,15 @@ fn test_config_integration() {
     let current_time = DateTime::parse_from_rfc3339("2025-01-08T17:39:49+01:00").unwrap();
 
     assert!(should_check_update(old_time, current_time));
+}
+
+#[test]
+fn test_clock_override_via_env() {
+    let expected = "2026-03-15T09:30:00+01:00";
+    env::set_var("COMMITTY_FIXED_NOW", expected);
+
+    let now = current_time().unwrap();
+
+    env::remove_var("COMMITTY_FIXED_NOW");
+    assert_eq!(now.to_rfc3339(), expected);
 }

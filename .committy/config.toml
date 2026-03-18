@@ -1,0 +1,63 @@
+[repository]
+name = "committy"
+type = "multi-package"
+description = "Generate clear, concise, and structured commit messages effortlessly"
+
+[versioning]
+strategy = "hybrid"
+
+[[packages]]
+name = "committy-cli"
+type = "rust-cargo"
+path = "."
+version_file = "Cargo.toml"
+version_field = "package.version"
+primary = true
+description = "Main CLI application"
+
+[[packages]]
+name = "mcp-server"
+type = "node-npm"
+path = "mcp-server-committy"
+version_file = "package.json"
+version_field = "version"
+sync_with = "committy-cli"
+description = "MCP server wrapper for Committy"
+
+[[packages]]
+name = "docs"
+type = "node-npm"
+path = "docs"
+version_file = "package.json"
+version_field = "version"
+independent = true
+description = "Documentation site"
+
+[scopes]
+auto_detect = true
+require_scope_for_multi_package = true
+allow_multiple_scopes = true
+scope_separator = ","
+
+[[scopes.mappings]]
+pattern = "src/**"
+scope = "core"
+package = "committy-cli"
+description = "Core CLI code"
+
+[[scopes.mappings]]
+pattern = "mcp-server-committy/**"
+scope = "mcp"
+package = "mcp-server"
+description = "MCP server code"
+
+[[scopes.mappings]]
+pattern = "docs/**"
+scope = "docs"
+package = "docs"
+description = "Documentation"
+
+[commit_rules]
+max_subject_length = 72
+max_body_line_length = 100
+require_body = false

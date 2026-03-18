@@ -1,0 +1,6 @@
+.git
+target
+mcp-server-committy/node_modules
+mcp-server-committy/dist
+docs/node_modules
+docs/dist

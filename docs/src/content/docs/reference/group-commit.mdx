@@ -21,12 +21,13 @@ committy --non-interactive group-commit --mode plan --output json [--include-uns
 
 ```bash
 committy --non-interactive group-commit --mode apply --output json \
-  [--include-unstaged] [--auto-stage] [--push]
+  [--include-unstaged] [--auto-stage] [--push --confirm-push]
 ```
 
 - Creates one commit per group using validated messages.
 - `--auto-stage`: stages only the files of the current group before committing.
 - `--push`: push commits after creation.
+- `--confirm-push`: required whenever `--push` is used.
 
 ## Grouping categories
 
@@ -53,6 +54,7 @@ Plan result (shape):
   "command": "group-commit",
   "mode": "plan",
   "ok": true,
+  "dry_run": true,
   "groups": [
     {"name": "docs", "commit_type": "docs", "files": ["README.md"], "suggested_message": "docs: update README"}
   ],
@@ -67,6 +69,7 @@ Apply result (shape):
   "command": "group-commit",
   "mode": "apply",
   "ok": true,
+  "dry_run": false,
   "groups": [...],
   "commits": [
     {"group": "docs", "message": "docs: update README", "ok": true, "sha": "<sha>"}

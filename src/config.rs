@@ -1,3 +1,7 @@
+// Multi-package support modules
+pub mod hierarchy;
+pub mod repository;
+
 pub const COMMIT_TYPES: &[&str] = &[
     "feat", "fix", "build", "chore", "ci", "cd", "docs", "perf", "refactor", "revert", "style",
     "test", "security", "config",

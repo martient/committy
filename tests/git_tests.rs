@@ -1,6 +1,5 @@
 mod common;
 
-use assert_cmd::Command;
 use predicates::prelude::*;
 use std::fs;
 use std::process::Command as StdCommand;
@@ -81,7 +80,7 @@ fn test_commit_message_formatting() {
         .expect("Failed to stage test file");
 
     // Test commit with scope and breaking change
-    let mut cmd = Command::cargo_bin("committy").unwrap();
+    let mut cmd = common::committy_cmd();
     cmd.current_dir(&temp_dir)
         .env("RUST_LOG", "info")
         .arg("--non-interactive")
@@ -118,7 +117,7 @@ fn test_unstaged_changes() {
     let test_file = temp_dir.path().join("test.txt");
     fs::write(&test_file, "test content").expect("Failed to write test file");
 
-    let mut cmd = Command::cargo_bin("committy").unwrap();
+    let mut cmd = common::committy_cmd();
     cmd.current_dir(&temp_dir)
         .env("RUST_LOG", "off")
         .arg("--non-interactive")
@@ -148,7 +147,7 @@ fn test_commit_without_git_config() {
         .output()
         .expect("Failed to stage test file");
 
-    let mut cmd = Command::cargo_bin("committy").unwrap();
+    let mut cmd = common::committy_cmd();
     cmd.current_dir(&temp_dir)
         .env("RUST_LOG", "off")
         .env("GIT_COMMITTER_NAME", "")
@@ -181,7 +180,7 @@ fn test_commit_with_amend() {
         .expect("Failed to stage test file");
 
     // Initial commit
-    let mut cmd = Command::cargo_bin("committy").unwrap();
+    let mut cmd = common::committy_cmd();
     cmd.current_dir(&temp_dir)
         .env("RUST_LOG", "info")
         .arg("--non-interactive")
@@ -202,7 +201,7 @@ fn test_commit_with_amend() {
         .expect("Failed to stage updated file");
 
     // Amend commit with non-interactive mode
-    let mut cmd = Command::cargo_bin("committy").unwrap();
+    let mut cmd = common::committy_cmd();
     cmd.current_dir(&temp_dir)
         .env("RUST_LOG", "info")
         .arg("--non-interactive")
@@ -225,4 +224,225 @@ fn test_commit_with_amend() {
     let log_output = String::from_utf8_lossy(&git_log.stdout);
     assert_eq!(log_output.lines().count(), 1);
     assert!(log_output.contains("feat: Amended commit"));
+}
+
+#[test]
+fn test_amend_non_interactive_without_staged_changes() {
+    let temp_dir = setup_git_repo();
+
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "test content").expect("Failed to write test file");
+    let _ = StdCommand::new("git")
+        .args(["add", "test.txt"])
+        .current_dir(&temp_dir)
+        .output()
+        .expect("Failed to stage test file");
+
+    common::committy_cmd()
+        .current_dir(&temp_dir)
+        .arg("--non-interactive")
+        .arg("commit")
+        .arg("--type")
+        .arg("feat")
+        .arg("--message")
+        .arg("Initial commit")
+        .assert()
+        .success();
+
+    common::committy_cmd()
+        .current_dir(&temp_dir)
+        .arg("--non-interactive")
+        .arg("amend")
+        .arg("--type")
+        .arg("fix")
+        .arg("--message")
+        .arg("Amended without staged changes")
+        .assert()
+        .success();
+
+    let git_log = StdCommand::new("git")
+        .args(["log", "--format=%s", "-n", "1"])
+        .current_dir(&temp_dir)
+        .output()
+        .expect("Failed to get git log");
+
+    let log_message = String::from_utf8_lossy(&git_log.stdout);
+    assert_eq!(log_message.lines().count(), 1);
+    assert!(log_message.contains("fix: Amended without staged changes"));
+}
+
+#[test]
+fn test_commit_amend_without_staged_changes_matches_amend_command() {
+    let temp_dir = setup_git_repo();
+
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "test content").expect("Failed to write test file");
+    let _ = StdCommand::new("git")
+        .args(["add", "test.txt"])
+        .current_dir(&temp_dir)
+        .output()
+        .expect("Failed to stage test file");
+
+    common::committy_cmd()
+        .current_dir(&temp_dir)
+        .arg("--non-interactive")
+        .arg("commit")
+        .arg("--type")
+        .arg("feat")
+        .arg("--message")
+        .arg("Initial commit")
+        .assert()
+        .success();
+
+    common::committy_cmd()
+        .current_dir(&temp_dir)
+        .arg("--non-interactive")
+        .arg("commit")
+        .arg("--amend")
+        .arg("--type")
+        .arg("fix")
+        .arg("--message")
+        .arg("Amended via commit flag")
+        .assert()
+        .success();
+
+    let git_log = StdCommand::new("git")
+        .args(["log", "--format=%s", "-n", "1"])
+        .current_dir(&temp_dir)
+        .output()
+        .expect("Failed to get git log");
+
+    let log_message = String::from_utf8_lossy(&git_log.stdout);
+    assert_eq!(log_message.lines().count(), 1);
+    assert!(log_message.contains("fix: Amended via commit flag"));
+}
+
+#[test]
+fn test_amend_dry_run_json_does_not_rewrite_commit() {
+    let temp_dir = setup_git_repo();
+
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "test content").expect("Failed to write test file");
+    let _ = StdCommand::new("git")
+        .args(["add", "test.txt"])
+        .current_dir(&temp_dir)
+        .output()
+        .expect("Failed to stage test file");
+
+    common::committy_cmd()
+        .current_dir(&temp_dir)
+        .arg("--non-interactive")
+        .arg("commit")
+        .arg("--type")
+        .arg("feat")
+        .arg("--message")
+        .arg("Initial commit")
+        .assert()
+        .success();
+
+    let before = StdCommand::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(&temp_dir)
+        .output()
+        .expect("Failed to get HEAD before amend");
+
+    let assert = common::committy_cmd()
+        .current_dir(&temp_dir)
+        .arg("--non-interactive")
+        .arg("amend")
+        .arg("--type")
+        .arg("fix")
+        .arg("--message")
+        .arg("Preview amend")
+        .arg("--dry-run")
+        .arg("--output")
+        .arg("json")
+        .assert()
+        .success();
+
+    let output = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    let v: serde_json::Value = serde_json::from_str(output.trim()).unwrap();
+    assert_eq!(v["command"], serde_json::json!("amend"));
+    assert_eq!(v["ok"], serde_json::json!(true));
+    assert_eq!(v["dry_run"], serde_json::json!(true));
+    assert_eq!(v["message"], serde_json::json!("fix: Preview amend"));
+
+    let after = StdCommand::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(&temp_dir)
+        .output()
+        .expect("Failed to get HEAD after amend preview");
+
+    assert_eq!(before.stdout, after.stdout);
+}
+
+#[test]
+fn test_amend_respects_repo_commit_rules() {
+    let temp_dir = setup_git_repo();
+
+    fs::create_dir_all(temp_dir.path().join(".committy")).expect("Failed to create .committy");
+    fs::write(
+        temp_dir.path().join(".committy/config.toml"),
+        r#"packages = []
+
+[repository]
+name = "amend-repo"
+type = "single-package"
+
+[versioning]
+strategy = "independent"
+
+[scopes]
+auto_detect = false
+require_scope_for_multi_package = false
+allow_multiple_scopes = false
+
+[commit_rules]
+require_body = true
+"#,
+    )
+    .expect("Failed to write config");
+
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "test content").expect("Failed to write test file");
+    let _ = StdCommand::new("git")
+        .args(["add", "test.txt"])
+        .current_dir(&temp_dir)
+        .output()
+        .expect("Failed to stage test file");
+
+    common::committy_cmd()
+        .current_dir(&temp_dir)
+        .arg("--non-interactive")
+        .arg("commit")
+        .arg("--type")
+        .arg("feat")
+        .arg("--message")
+        .arg("Initial commit")
+        .arg("--long-message")
+        .arg("Initial body")
+        .assert()
+        .success();
+
+    let assert = common::committy_cmd()
+        .current_dir(&temp_dir)
+        .arg("--non-interactive")
+        .arg("amend")
+        .arg("--type")
+        .arg("fix")
+        .arg("--message")
+        .arg("Missing body")
+        .arg("--dry-run")
+        .arg("--output")
+        .arg("json")
+        .assert()
+        .code(3);
+
+    let output = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    let v: serde_json::Value = serde_json::from_str(output.trim()).unwrap();
+    assert_eq!(v["ok"], serde_json::json!(false));
+    assert_eq!(
+        v["errors"][0],
+        serde_json::json!("Commit body is required by repository configuration")
+    );
 }
