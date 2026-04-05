@@ -16,15 +16,6 @@ primary = true
 description = "Main CLI application"
 
 [[packages]]
-name = "mcp-server"
-type = "node-npm"
-path = "mcp-server-committy"
-version_file = "package.json"
-version_field = "version"
-sync_with = "committy-cli"
-description = "MCP server wrapper for Committy"
-
-[[packages]]
 name = "docs"
 type = "node-npm"
 path = "docs"
@@ -44,12 +35,6 @@ pattern = "src/**"
 scope = "core"
 package = "committy-cli"
 description = "Core CLI code"
-
-[[scopes.mappings]]
-pattern = "mcp-server-committy/**"
-scope = "mcp"
-package = "mcp-server"
-description = "MCP server code"
 
 [[scopes.mappings]]
 pattern = "docs/**"
