@@ -9,7 +9,6 @@ use serde::Serialize;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command as ProcCommand;
 use structopt::StructOpt;
 
 #[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -148,6 +147,12 @@ pub struct GroupCommitCommand {
     #[structopt(long = "ai-allow-sensitive")]
     ai_allow_sensitive: bool,
 
+    #[structopt(
+        long = "git-config",
+        help = "Pass through git -c key=value overrides (repeatable)"
+    )]
+    git_config: Vec<String>,
+
     #[structopt(long, default_value = ".", parse(from_os_str))]
     repo_path: PathBuf,
 }
@@ -175,6 +180,7 @@ impl Default for GroupCommitCommand {
             ai_file_limit: 20,
             _ai_diff_lines_per_file: 80,
             ai_allow_sensitive: false,
+            git_config: vec![],
             repo_path: PathBuf::from("."),
         }
     }
@@ -307,6 +313,8 @@ impl Command for GroupCommitCommand {
                 let repo_path = repo.workdir().ok_or_else(|| {
                     CliError::GitError(git2::Error::from_str("No working directory"))
                 })?;
+                let _git_command_config =
+                    crate::git::resolve_git_command_config(repo_path, &self.git_config)?;
                 let mut by_group: std::collections::BTreeMap<GroupName, Vec<String>> = [
                     (GroupName::Docs, vec![]),
                     (GroupName::Tests, vec![]),
@@ -528,6 +536,8 @@ impl Command for GroupCommitCommand {
                 let repo_path = repo.workdir().ok_or_else(|| {
                     CliError::GitError(git2::Error::from_str("No working directory"))
                 })?;
+                let git_command_config =
+                    crate::git::resolve_git_command_config(repo_path, &self.git_config)?;
                 // Build groups as in plan
                 let files = list_changed_files_from(&self.repo_path, self.include_unstaged)?;
                 let mut by_group: std::collections::BTreeMap<GroupName, Vec<String>> = [
@@ -711,24 +721,6 @@ impl Command for GroupCommitCommand {
                     }
                 }
 
-                // Helper: quietly run `git` command
-                fn run_git(repo_path: &Path, args: &[&str]) -> Result<(), CliError> {
-                    let mut cmd = ProcCommand::new("git");
-                    cmd.current_dir(repo_path).args(args);
-                    let status = cmd
-                        .stdout(std::process::Stdio::null())
-                        .stderr(std::process::Stdio::null())
-                        .status()
-                        .map_err(|e| CliError::Generic(e.to_string()))?;
-                    if status.success() {
-                        Ok(())
-                    } else {
-                        Err(CliError::Generic(format!(
-                            "git {args:?} failed with status {status:?}"
-                        )))
-                    }
-                }
-
                 fn last_commit_sha(repo_path: &Path) -> Option<String> {
                     if let Ok(repo) = Repository::discover(repo_path) {
                         if let Ok(head) = repo.head() {
@@ -769,7 +761,12 @@ impl Command for GroupCommitCommand {
                     // Stage only this group's files if requested
                     if self.auto_stage {
                         // Unstage everything back to HEAD, then stage only the group's files
-                        if let Err(e) = run_git(repo_path, &["reset", "-q", "HEAD", "--"]) {
+                        if let Err(e) = crate::git::run_git(
+                            repo_path,
+                            &["reset", "-q", "HEAD", "--"],
+                            "reset staged changes",
+                            &git_command_config,
+                        ) {
                             errors.push(format!(
                                 "git reset failed before staging {}: {}",
                                 group_name_str(g.name),
@@ -781,7 +778,12 @@ impl Command for GroupCommitCommand {
                         for f in &g.files {
                             args.push(f.as_str());
                         }
-                        if let Err(e) = run_git(repo_path, &args) {
+                        if let Err(e) = crate::git::run_git(
+                            repo_path,
+                            &args,
+                            "stage group files",
+                            &git_command_config,
+                        ) {
                             errors.push(format!(
                                 "git add failed for group {}: {}",
                                 group_name_str(g.name),
@@ -799,7 +801,12 @@ impl Command for GroupCommitCommand {
                     }
 
                     // Create commit
-                    match crate::git::commit_changes_in(repo_path, &final_msg, false) {
+                    match crate::git::commit_changes_in_with_config(
+                        repo_path,
+                        &final_msg,
+                        false,
+                        &git_command_config,
+                    ) {
                         Ok(_) => {
                             let sha = last_commit_sha(repo_path);
                             commits.push(CommitRecord {
@@ -830,7 +837,13 @@ impl Command for GroupCommitCommand {
                 // Optional push
                 let mut pushed: Option<bool> = None;
                 if self.push {
-                    let push_ok = run_git(repo_path, &["push"]).is_ok();
+                    let push_ok = crate::git::run_git(
+                        repo_path,
+                        &["push"],
+                        "push grouped commits",
+                        &git_command_config,
+                    )
+                    .is_ok();
                     if !push_ok {
                         errors.push("git push failed".to_string());
                     }

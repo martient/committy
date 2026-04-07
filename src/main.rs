@@ -4,6 +4,7 @@ mod ai;
 mod cli;
 mod clock;
 mod config;
+mod convention;
 mod dependency;
 mod error;
 mod git;
@@ -226,7 +227,7 @@ fn run(config: &mut Config) -> Result<()> {
     let result = match opt.cmd {
         Some(cmd) => cmd.execute(non_interactive),
         None => {
-            let cmd = CommitCommand::default();
+            let cmd = CommitCommand::default_interactive();
             cmd.execute(non_interactive)
         }
     };

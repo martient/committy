@@ -1,7 +1,7 @@
+use super::process::{run_git_with_input, GitCommandConfig};
 use super::repository::{discover_repository, discover_repository_from};
 use crate::error::CliError;
 use std::path::Path;
-use std::process::{Command, Stdio};
 
 /// Stage a file for commit
 pub fn stage_file(file_path: &Path) -> Result<(), CliError> {
@@ -26,18 +26,39 @@ pub fn stage_file(file_path: &Path) -> Result<(), CliError> {
 #[allow(dead_code)]
 pub fn commit_changes(message: &str, amend: bool) -> Result<(), CliError> {
     let repo = discover_repository()?;
-    commit_changes_in_repo(&repo, message, amend)
+    commit_changes_in_repo(&repo, message, amend, &GitCommandConfig::default())
 }
 
+#[allow(dead_code)]
 pub fn commit_changes_in(path: &Path, message: &str, amend: bool) -> Result<(), CliError> {
+    commit_changes_in_with_config(path, message, amend, &GitCommandConfig::default())
+}
+
+#[allow(dead_code)]
+pub fn commit_changes_with_config(
+    message: &str,
+    amend: bool,
+    git_command_config: &GitCommandConfig,
+) -> Result<(), CliError> {
+    let repo = discover_repository()?;
+    commit_changes_in_repo(&repo, message, amend, git_command_config)
+}
+
+pub fn commit_changes_in_with_config(
+    path: &Path,
+    message: &str,
+    amend: bool,
+    git_command_config: &GitCommandConfig,
+) -> Result<(), CliError> {
     let repo = discover_repository_from(path)?;
-    commit_changes_in_repo(&repo, message, amend)
+    commit_changes_in_repo(&repo, message, amend, git_command_config)
 }
 
 fn commit_changes_in_repo(
     repo: &git2::Repository,
     message: &str,
     amend: bool,
+    git_command_config: &GitCommandConfig,
 ) -> Result<(), CliError> {
     let repo_path = repo
         .workdir()
@@ -47,45 +68,15 @@ fn commit_changes_in_repo(
         args.push("--amend");
     }
 
-    run_git_with_input(repo_path, &args, message, "create commit")?;
+    run_git_with_input(
+        repo_path,
+        &args,
+        message,
+        "create commit",
+        git_command_config,
+    )?;
 
     Ok(())
-}
-
-fn run_git_with_input(
-    repo_path: &Path,
-    args: &[&str],
-    input: &str,
-    action: &str,
-) -> Result<(), CliError> {
-    let mut child = Command::new("git")
-        .current_dir(repo_path)
-        .args(args)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(CliError::IoError)?;
-
-    if let Some(mut stdin) = child.stdin.take() {
-        use std::io::Write;
-        stdin
-            .write_all(input.as_bytes())
-            .map_err(CliError::IoError)?;
-    }
-
-    let output = child.wait_with_output().map_err(CliError::IoError)?;
-    if output.status.success() {
-        return Ok(());
-    }
-
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    let detail = if stderr.is_empty() {
-        format!("git {:?} failed", args)
-    } else {
-        stderr
-    };
-    Err(CliError::Generic(format!("Failed to {action}: {detail}")))
 }
 
 pub fn format_commit_message(

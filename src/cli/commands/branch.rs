@@ -14,7 +14,7 @@ use serde_json::Value;
 use std::path::PathBuf;
 use structopt::StructOpt;
 
-#[derive(Debug, StructOpt, Default)]
+#[derive(Debug, StructOpt)]
 pub struct BranchCommand {
     #[structopt(short, long, help = "Name of the branch to create")]
     name: Option<String>,
@@ -56,6 +56,22 @@ struct BranchCommandOutput {
     would_create: bool,
     would_checkout: bool,
     errors: Option<Vec<String>>,
+}
+
+impl Default for BranchCommand {
+    fn default() -> Self {
+        Self {
+            name: None,
+            branch_type: None,
+            ticket: None,
+            subject: None,
+            force: false,
+            validate: false,
+            dry_run: false,
+            output: "text".to_string(),
+            repo_path: PathBuf::from("."),
+        }
+    }
 }
 
 struct BranchPlan {

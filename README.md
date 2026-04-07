@@ -47,8 +47,11 @@ committy
 - Full docs live in `docs/` (Astro + Starlight): `docs/src/content/docs/`
 - Key references:
   - Agent Workflows: `docs/src/content/docs/reference/agent-workflows.mdx`
-  - Group Commit: `docs/src/content/docs/reference/group-commit.mdx`
-  - AI Flags & Security: `docs/src/content/docs/reference/ai-flags.mdx`
+- Group Commit: `docs/src/content/docs/reference/group-commit.mdx`
+- AI Flags & Security: `docs/src/content/docs/reference/ai-flags.mdx`
+- Troubleshooting: `docs/src/content/docs/reference/troubleshooting.mdx`
+- CLI Workflow Reference: `docs/CLI_WORKFLOW_REFERENCE.md`
+- Command Surface Overview: `docs/COMMAND_SURFACE.md`
 
 ## 🛠 Options and Commands
 
@@ -71,14 +74,55 @@ committy --non-interactive commit --amend --type fix --message "adjust release n
 ### Create a short commit
 
 ```shell
-committy -s "change the api version"
+committy --non-interactive commit --type chore --message "change the api version"
 ```
 
 ### Create a short commit and amend
 
 ```shell
-committy -s "change the api version" amend
+committy --non-interactive amend --type chore --message "change the api version"
 ```
+
+### Git and SSH overrides
+
+Committy uses native `git` by default. When you need a repo-specific SSH transport or signing setup, pass one or more `--git-config key=value` overrides:
+
+```shell
+committy --non-interactive commit \
+  --type feat \
+  --message "use alternate ssh identity" \
+  --git-config 'core.sshCommand=ssh -i ~/.ssh/customer_key -o IdentitiesOnly=yes'
+
+committy --non-interactive tag --name v1.2.3 \
+  --git-config 'gpg.format=ssh' \
+  --git-config "user.signingkey=$HOME/.ssh/signing_key.pub"
+```
+
+You can also persist those overrides in user config (`~/.config/committy/config.toml`) or repo config (`.committy/config.toml`):
+
+```toml
+[git]
+config_overrides = [
+  "core.sshCommand=ssh -i ~/.ssh/customer_key -o IdentitiesOnly=yes"
+]
+```
+
+### Expanded command surface
+
+Committy includes native release, changelog, version, and convention-introspection commands:
+
+```shell
+committy bump --dry-run --output json
+committy changelog --dry-run --output json
+committy version --project --output json
+committy schema --output json
+committy example --output json
+committy info --output json
+committy ls --output json
+committy config scaffold --dry-run --output json
+```
+
+See `docs/COMMAND_SURFACE.md` for the command overview and `docs/CLI_WORKFLOW_REFERENCE.md` for provider-specific examples.
 
 ## ⚙️ CLI Reference & Advanced Usage
 

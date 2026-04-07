@@ -172,6 +172,25 @@ fn cleanup(temp_dir: tempfile::TempDir) {
 }
 
 #[test]
+fn test_default_commit_flow_no_longer_uses_empty_repo_path() {
+    let temp_dir = setup();
+
+    common::committy_cmd()
+        .current_dir(&temp_dir)
+        .env("COMMITTY_NONINTERACTIVE", "1")
+        .env("CI", "1")
+        .env("RUST_LOG", "error")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "In non-interactive mode, --type and --message are required",
+        ))
+        .stderr(predicate::str::contains("Failed to discover repository from \"\"").not());
+
+    cleanup(temp_dir);
+}
+
+#[test]
 fn test_commit_command_with_valid_input() {
     let temp_dir = setup();
 

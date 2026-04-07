@@ -142,6 +142,7 @@ fn test_config_validate_json_is_clean_stdout() {
         payload["repository"]["name"],
         Value::String("config-repo".into())
     );
+    assert!(payload["git"]["config_overrides"].is_array());
 }
 
 #[test]
@@ -175,6 +176,7 @@ fn test_config_show_json_is_clean_stdout() {
         Value::String("show-repo".into())
     );
     assert!(payload["user_config"].is_object());
+    assert!(payload["effective_git_config_overrides"].is_array());
 }
 
 #[test]

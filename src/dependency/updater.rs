@@ -266,6 +266,10 @@ mod tests {
             }],
             scopes: Default::default(),
             commit_rules: Default::default(),
+            git: Default::default(),
+            convention: None,
+            release: None,
+            changelog: None,
             workspace: None,
         }
     }

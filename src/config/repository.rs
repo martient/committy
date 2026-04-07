@@ -1,6 +1,12 @@
 // Repository-level configuration for multi-package support
 // Loaded from .committy/config.toml
 
+use super::{
+    changelog::ChangelogConfig,
+    convention::ConventionConfig,
+    git::{validate_git_config_overrides, GitConfig},
+    release::ReleaseConfig,
+};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -19,6 +25,14 @@ pub struct RepositoryConfig {
     pub scopes: ScopeConfig,
     #[serde(default)]
     pub commit_rules: CommitRulesConfig,
+    #[serde(default)]
+    pub git: GitConfig,
+    #[serde(default)]
+    pub convention: Option<ConventionConfig>,
+    #[serde(default)]
+    pub release: Option<ReleaseConfig>,
+    #[serde(default)]
+    pub changelog: Option<ChangelogConfig>,
     #[serde(default)]
     pub workspace: Option<WorkspaceConfig>,
 }
@@ -285,6 +299,8 @@ impl RepositoryConfig {
 
     /// Validate the configuration
     pub fn validate(&self, repo_path: &Path) -> Result<()> {
+        validate_git_config_overrides(&self.git.config_overrides)?;
+
         // Validate package names are unique
         let mut names = HashSet::new();
         for pkg in &self.packages {
@@ -531,6 +547,10 @@ mod tests {
             dependencies: vec![],
             scopes: ScopeConfig::default(),
             commit_rules: CommitRulesConfig::default(),
+            git: Default::default(),
+            convention: None,
+            release: None,
+            changelog: None,
             workspace: None,
         };
 
@@ -593,6 +613,10 @@ mod tests {
             dependencies: vec![],
             scopes: ScopeConfig::default(),
             commit_rules: CommitRulesConfig::default(),
+            git: Default::default(),
+            convention: None,
+            release: None,
+            changelog: None,
             workspace: None,
         };
 
@@ -643,6 +667,10 @@ mod tests {
             dependencies: vec![],
             scopes: ScopeConfig::default(),
             commit_rules: CommitRulesConfig::default(),
+            git: Default::default(),
+            convention: None,
+            release: None,
+            changelog: None,
             workspace: None,
         };
 
@@ -699,6 +727,10 @@ mod tests {
             dependencies: vec![],
             scopes: ScopeConfig::default(),
             commit_rules: CommitRulesConfig::default(),
+            git: Default::default(),
+            convention: None,
+            release: None,
+            changelog: None,
             workspace: None,
         };
 

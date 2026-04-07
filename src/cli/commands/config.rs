@@ -2,11 +2,15 @@
 
 use crate::cli::Command;
 use crate::config::hierarchy::MergedConfig;
-use crate::config::repository::RepositoryConfig;
+use crate::config::repository::{
+    CommitRulesConfig, RepositoryConfig, RepositoryMetadata, RepositoryType, VersioningConfig,
+    VersioningStrategy,
+};
 use crate::error::CliError;
 use anyhow::Result;
 use colored::Colorize;
 use serde_json::json;
+use std::fs;
 use std::path::Path;
 use structopt::StructOpt;
 
@@ -46,6 +50,20 @@ pub enum ConfigSubcommand {
         )]
         repo_path: std::path::PathBuf,
     },
+    #[structopt(about = "Scaffold a Committy-native config file")]
+    Scaffold {
+        #[structopt(short, long)]
+        dry_run: bool,
+        #[structopt(long, default_value = "text", possible_values = &["text", "json"])]
+        output: String,
+        #[structopt(
+            long,
+            help = "Repository path",
+            default_value = ".",
+            parse(from_os_str)
+        )]
+        repo_path: std::path::PathBuf,
+    },
 }
 
 impl Command for ConfigCommand {
@@ -63,6 +81,13 @@ impl Command for ConfigCommand {
                 output,
                 repo_path,
             } => show(repo_path, *verbose, output).map_err(|e| CliError::Generic(e.to_string())),
+            ConfigSubcommand::Scaffold {
+                dry_run,
+                output,
+                repo_path,
+            } => {
+                scaffold(repo_path, *dry_run, output).map_err(|e| CliError::Generic(e.to_string()))
+            }
         }
     }
 }
@@ -96,10 +121,15 @@ pub fn validate(repo_path: &Path, verbose: bool, output: &str) -> Result<()> {
                     "package_count": config.packages.len(),
                     "dependency_count": config.dependencies.len(),
                     "scope_mapping_count": config.scopes.mappings.len(),
+                    "git_config_override_count": config.git.config_overrides.len(),
                 },
                 "packages": config.packages,
                 "dependencies": config.dependencies,
                 "scope_mappings": config.scopes.mappings,
+                "git": config.git,
+                "convention": config.convention,
+                "release": config.release,
+                "changelog": config.changelog,
                 "warnings": warnings,
                 "verbose": verbose,
             })
@@ -118,6 +148,9 @@ pub fn validate(repo_path: &Path, verbose: bool, output: &str) -> Result<()> {
                 "packages": Vec::<serde_json::Value>::new(),
                 "dependencies": Vec::<serde_json::Value>::new(),
                 "scope_mappings": Vec::<serde_json::Value>::new(),
+                "convention": serde_json::Value::Null,
+                "release": serde_json::Value::Null,
+                "changelog": serde_json::Value::Null,
                 "warnings": Vec::<String>::new(),
                 "verbose": verbose,
             })
@@ -155,6 +188,19 @@ pub fn validate(repo_path: &Path, verbose: bool, output: &str) -> Result<()> {
     println!("  Packages: {}", repo_config.packages.len());
     println!("  Dependencies: {}", repo_config.dependencies.len());
     println!("  Scope Mappings: {}", repo_config.scopes.mappings.len());
+    println!(
+        "  Git Config Overrides: {}",
+        repo_config.git.config_overrides.len()
+    );
+    println!(
+        "  Convention Configured: {}",
+        repo_config.convention.is_some()
+    );
+    println!("  Release Configured: {}", repo_config.release.is_some());
+    println!(
+        "  Changelog Configured: {}",
+        repo_config.changelog.is_some()
+    );
     println!();
 
     // Show packages
@@ -232,6 +278,18 @@ pub fn validate(repo_path: &Path, verbose: bool, output: &str) -> Result<()> {
         println!();
     }
 
+    if !repo_config.git.config_overrides.is_empty() || verbose {
+        println!("{}", "Git Overrides:".bold());
+        if repo_config.git.config_overrides.is_empty() {
+            println!("  None");
+        } else {
+            for override_value in &repo_config.git.config_overrides {
+                println!("  - {}", override_value);
+            }
+        }
+        println!();
+    }
+
     // Warnings
     let warnings = collect_validation_warnings(repo_path, &repo_config);
 
@@ -265,6 +323,10 @@ pub fn show(repo_path: &Path, verbose: bool, output: &str) -> Result<()> {
                 "minor_regex": merged.get_minor_regex(),
                 "patch_regex": merged.get_patch_regex(),
             },
+            "effective_git_config_overrides": merged.get_git_config_overrides(),
+            "effective_convention": merged.effective_convention(),
+            "effective_release": merged.effective_release(),
+            "effective_changelog": merged.effective_changelog(),
             "repository_config": merged.repository_config(),
             "user_config": merged.user_config(),
             "verbose": verbose,
@@ -303,6 +365,14 @@ pub fn show(repo_path: &Path, verbose: bool, output: &str) -> Result<()> {
                     println!("    Patch: {}", patch);
                 }
             }
+            println!("  Git Config Overrides:");
+            if repo_config.git.config_overrides.is_empty() {
+                println!("    None");
+            } else {
+                for override_value in &repo_config.git.config_overrides {
+                    println!("    {}", override_value);
+                }
+            }
         }
         println!();
     } else {
@@ -326,6 +396,14 @@ pub fn show(repo_path: &Path, verbose: bool, output: &str) -> Result<()> {
         println!("    Major: {}", user_config.major_regex);
         println!("    Minor: {}", user_config.minor_regex);
         println!("    Patch: {}", user_config.patch_regex);
+        println!("  Git Config Overrides:");
+        if user_config.git.config_overrides.is_empty() {
+            println!("    None");
+        } else {
+            for override_value in &user_config.git.config_overrides {
+                println!("    {}", override_value);
+            }
+        }
     }
     println!();
 
@@ -335,7 +413,76 @@ pub fn show(repo_path: &Path, verbose: bool, output: &str) -> Result<()> {
     println!("  Major regex: {}", merged.get_major_regex());
     println!("  Minor regex: {}", merged.get_minor_regex());
     println!("  Patch regex: {}", merged.get_patch_regex());
+    println!(
+        "  Git config overrides: {}",
+        if merged.get_git_config_overrides().is_empty() {
+            "None".to_string()
+        } else {
+            merged.get_git_config_overrides().join(", ")
+        }
+    );
+    println!("  Convention: {}", merged.effective_convention().name);
+    println!(
+        "  Release provider: {}",
+        merged.effective_release().provider
+    );
+    println!(
+        "  Changelog template: {}",
+        merged.effective_changelog().template
+    );
 
+    Ok(())
+}
+
+pub fn scaffold(repo_path: &Path, dry_run: bool, output: &str) -> Result<()> {
+    let config_path = RepositoryConfig::get_config_path(repo_path)?;
+    let config = RepositoryConfig {
+        repository: RepositoryMetadata {
+            name: repo_path
+                .file_name()
+                .and_then(|value| value.to_str())
+                .unwrap_or("repository")
+                .to_string(),
+            repo_type: RepositoryType::SinglePackage,
+            description: Some("Committy-native repository config".to_string()),
+        },
+        versioning: VersioningConfig {
+            strategy: VersioningStrategy::Independent,
+            unified_version: None,
+            rules: None,
+        },
+        packages: vec![],
+        dependencies: vec![],
+        scopes: Default::default(),
+        commit_rules: CommitRulesConfig::default(),
+        git: Default::default(),
+        convention: Some(Default::default()),
+        release: Some(Default::default()),
+        changelog: Some(Default::default()),
+        workspace: None,
+    };
+
+    if output == "json" {
+        let payload = json!({
+            "command": "config",
+            "mode": "scaffold",
+            "ok": true,
+            "dry_run": dry_run,
+            "config_path": config_path.display().to_string(),
+            "config": config,
+            "errors": serde_json::Value::Null,
+        });
+        println!("{}", serde_json::to_string(&payload)?);
+    } else {
+        println!("{}", toml::to_string_pretty(&config)?);
+    }
+
+    if !dry_run {
+        if let Some(parent) = config_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(config_path, toml::to_string_pretty(&config)?)?;
+    }
     Ok(())
 }
 
@@ -400,6 +547,10 @@ mod tests {
             dependencies: vec![],
             scopes: Default::default(),
             commit_rules: Default::default(),
+            git: Default::default(),
+            convention: None,
+            release: None,
+            changelog: None,
             workspace: None,
         };
 

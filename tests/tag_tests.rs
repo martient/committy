@@ -3,6 +3,7 @@ mod common;
 use git2::{Repository, Signature};
 use predicates::prelude::*;
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use tempfile::tempdir;
 
 fn setup_test_repo() -> tempfile::TempDir {
@@ -32,6 +33,40 @@ fn setup_test_repo() -> tempfile::TempDir {
     .unwrap();
 
     dir
+}
+
+fn write_executable_script(path: &std::path::Path, body: &str) {
+    fs::write(path, body).expect("Failed to write script");
+    let mut permissions = fs::metadata(path).unwrap().permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(path, permissions).expect("Failed to chmod script");
+}
+
+fn write_repo_git_config(dir: &std::path::Path, overrides: &[String]) {
+    fs::create_dir_all(dir.join(".committy")).expect("Failed to create .committy");
+    let overrides = overrides
+        .iter()
+        .map(|value| format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\"")))
+        .collect::<Vec<_>>()
+        .join(", ");
+    fs::write(
+        dir.join(".committy/config.toml"),
+        format!(
+            r#"packages = []
+
+[repository]
+name = "tag-repo"
+type = "single-package"
+
+[versioning]
+strategy = "independent"
+
+[git]
+config_overrides = [{overrides}]
+"#
+        ),
+    )
+    .expect("Failed to write repo config");
 }
 
 #[test]
@@ -215,4 +250,44 @@ fn test_tag_with_staged_changes() {
     cmd.assert().failure().stderr(predicate::str::contains(
         "Please commit your staged changes before doing that",
     ));
+}
+
+#[test]
+fn test_tag_respects_repo_git_overrides_and_cli_can_override_them() {
+    let dir = setup_test_repo();
+
+    let failing_gpg = dir.path().join("failing-gpg.sh");
+    write_executable_script(
+        &failing_gpg,
+        "#!/bin/sh\necho 'blocked by tag signing override' >&2\nexit 1\n",
+    );
+
+    write_repo_git_config(
+        dir.path(),
+        &[
+            "tag.gpgsign=true".to_string(),
+            format!("gpg.program={}", failing_gpg.display()),
+        ],
+    );
+
+    common::committy_cmd()
+        .current_dir(dir.path())
+        .arg("--non-interactive")
+        .arg("tag")
+        .arg("--name")
+        .arg("v1.0.0")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("blocked by tag signing override"));
+
+    common::committy_cmd()
+        .current_dir(dir.path())
+        .arg("--non-interactive")
+        .arg("tag")
+        .arg("--name")
+        .arg("v1.0.0")
+        .arg("--git-config")
+        .arg("tag.gpgsign=false")
+        .assert()
+        .success();
 }

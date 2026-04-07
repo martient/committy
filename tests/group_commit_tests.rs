@@ -2,6 +2,7 @@ mod common;
 
 use serde_json::Value;
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::process::Command as StdCommand;
 use tempfile::tempdir;
 
@@ -60,6 +61,47 @@ strategy = "independent"
         ),
     )
     .expect("Failed to write commit rules config");
+}
+
+fn write_group_repo_config_with_git_overrides(
+    dir: &std::path::Path,
+    body: &str,
+    overrides: &[String],
+) {
+    fs::create_dir_all(dir.join(".committy")).expect("Failed to create .committy");
+    let overrides = overrides
+        .iter()
+        .map(|value| format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\"")))
+        .collect::<Vec<_>>()
+        .join(", ");
+    fs::write(
+        dir.join(".committy/config.toml"),
+        format!(
+            r#"packages = []
+
+[repository]
+name = "group-repo"
+type = "single-package"
+
+[versioning]
+strategy = "independent"
+
+[commit_rules]
+{body}
+
+[git]
+config_overrides = [{overrides}]
+"#
+        ),
+    )
+    .expect("Failed to write group repo config");
+}
+
+fn write_executable_script(path: &std::path::Path, body: &str) {
+    fs::write(path, body).expect("Failed to write script");
+    let mut permissions = fs::metadata(path).unwrap().permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(path, permissions).expect("Failed to chmod script");
 }
 
 #[test]
@@ -286,6 +328,74 @@ fn test_group_commit_plan_supports_repo_path_without_chdir() {
     let v: Value = serde_json::from_str(output.trim()).unwrap();
     assert_eq!(v["command"], Value::String("group-commit".into()));
     assert_eq!(v["ok"], Value::Bool(true));
+}
+
+#[test]
+fn test_group_commit_apply_respects_repo_git_overrides_and_cli_can_override_them() {
+    let temp_dir = setup_repo();
+
+    let docs_file = temp_dir.path().join("docs/OVERRIDE.md");
+    std::fs::create_dir_all(docs_file.parent().unwrap()).unwrap();
+    std::fs::write(&docs_file, "Override test\n").unwrap();
+    StdCommand::new("git")
+        .args(["add", "docs/OVERRIDE.md"])
+        .current_dir(&temp_dir)
+        .output()
+        .expect("Failed to stage override docs file");
+
+    let failing_hooks = temp_dir.path().join("failing-hooks");
+    std::fs::create_dir_all(&failing_hooks).unwrap();
+    write_executable_script(
+        &failing_hooks.join("pre-commit"),
+        "#!/bin/sh\necho 'blocked by group test hook' >&2\nexit 1\n",
+    );
+
+    let passing_hooks = temp_dir.path().join("passing-hooks");
+    std::fs::create_dir_all(&passing_hooks).unwrap();
+
+    write_group_repo_config_with_git_overrides(
+        temp_dir.path(),
+        "",
+        &[format!("core.hooksPath={}", failing_hooks.display())],
+    );
+
+    let blocked = common::committy_cmd()
+        .current_dir(&temp_dir)
+        .env("RUST_LOG", "off")
+        .arg("--non-interactive")
+        .arg("group-commit")
+        .arg("--mode")
+        .arg("apply")
+        .arg("--output")
+        .arg("json")
+        .assert()
+        .success();
+
+    let blocked_output = String::from_utf8(blocked.get_output().stdout.clone()).unwrap();
+    let blocked_json: Value = serde_json::from_str(blocked_output.trim()).unwrap();
+    assert_eq!(blocked_json["ok"], Value::Bool(false));
+    assert!(
+        blocked_output.contains("blocked by group test hook"),
+        "expected git override hook failure in output: {blocked_output}"
+    );
+
+    let allowed = common::committy_cmd()
+        .current_dir(&temp_dir)
+        .env("RUST_LOG", "off")
+        .arg("--non-interactive")
+        .arg("group-commit")
+        .arg("--mode")
+        .arg("apply")
+        .arg("--output")
+        .arg("json")
+        .arg("--git-config")
+        .arg(format!("core.hooksPath={}", passing_hooks.display()))
+        .assert()
+        .success();
+
+    let allowed_output = String::from_utf8(allowed.get_output().stdout.clone()).unwrap();
+    let allowed_json: Value = serde_json::from_str(allowed_output.trim()).unwrap();
+    assert_eq!(allowed_json["ok"], Value::Bool(true));
 }
 
 #[test]
