@@ -276,6 +276,16 @@ impl TagCommand {
             return Ok(());
         }
 
+        if self.tag_options.dry_run() {
+            for tag_name in planned_multi_package_tags(repo_config, &version_updates) {
+                info!("🧪 Dry run: Tag would be {}", tag_name);
+                if self.output != "json" {
+                    println!("{}", tag_name);
+                }
+            }
+            return Ok(());
+        }
+
         // Step 5: Update version files per package
         if self.bump_config_files {
             self.apply_version_updates(repo_path, &version_updates)?;
@@ -686,9 +696,26 @@ fn hybrid_tag_name(
     Some(format!("v{}", update.new_version))
 }
 
+fn planned_multi_package_tags(
+    config: &RepositoryConfig,
+    updates: &[crate::versioning::manager::VersionUpdate],
+) -> Vec<String> {
+    match config.versioning.strategy {
+        VersioningStrategy::Unified => updates
+            .first()
+            .map(|update| vec![format!("v{}", update.new_version)])
+            .unwrap_or_default(),
+        VersioningStrategy::Independent => updates
+            .iter()
+            .map(|update| format!("{}-v{}", update.package_name, update.new_version))
+            .collect(),
+        VersioningStrategy::Hybrid => hybrid_tag_name(config, updates).into_iter().collect(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{hybrid_tag_name, resolve_scope_packages, TagCommand};
+    use super::{hybrid_tag_name, planned_multi_package_tags, resolve_scope_packages, TagCommand};
     use crate::config::repository::{
         PackageConfig, RepositoryConfig, RepositoryMetadata, RepositoryType, ScopeConfig,
         ScopeMapping, VersioningConfig, VersioningStrategy,
@@ -832,5 +859,20 @@ mod tests {
         );
 
         assert!(tag.is_none());
+    }
+
+    #[test]
+    fn planned_multi_package_tags_uses_hybrid_repo_tag() {
+        let config = create_multi_package_config();
+        let tags = planned_multi_package_tags(
+            &config,
+            &[VersionUpdate::new(
+                "committy-cli".to_string(),
+                "1.0.0".to_string(),
+                "1.0.1".to_string(),
+            )],
+        );
+
+        assert_eq!(tags, vec!["v1.0.1"]);
     }
 }
