@@ -562,12 +562,20 @@ impl TagCommand {
                     info!("📌 Created unified tag: {}", tag_name);
                 }
             }
-            VersioningStrategy::Independent | VersioningStrategy::Hybrid => {
+            VersioningStrategy::Independent => {
                 // Per-package tags
                 for update in updates {
                     let tag_name = format!("{}-v{}", update.package_name, update.new_version);
                     self.create_and_push_tag(repo, &tag_name, git_command_config)?;
                     info!("📌 Created tag: {}", tag_name);
+                }
+            }
+            VersioningStrategy::Hybrid => {
+                if let Some(tag_name) = hybrid_tag_name(config, updates) {
+                    self.create_and_push_tag(repo, &tag_name, git_command_config)?;
+                    info!("📌 Created hybrid tag: {}", tag_name);
+                } else {
+                    info!("ℹ️ No primary package version change. Skipping tag creation.");
                 }
             }
         }
@@ -667,13 +675,25 @@ fn resolve_scope_packages(scope_value: &str, config: &RepositoryConfig) -> Vec<S
     packages
 }
 
+fn hybrid_tag_name(
+    config: &RepositoryConfig,
+    updates: &[crate::versioning::manager::VersionUpdate],
+) -> Option<String> {
+    let primary = config.packages.iter().find(|package| package.primary)?;
+    let update = updates
+        .iter()
+        .find(|update| update.package_name == primary.name)?;
+    Some(format!("v{}", update.new_version))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{resolve_scope_packages, TagCommand};
+    use super::{hybrid_tag_name, resolve_scope_packages, TagCommand};
     use crate::config::repository::{
         PackageConfig, RepositoryConfig, RepositoryMetadata, RepositoryType, ScopeConfig,
         ScopeMapping, VersioningConfig, VersioningStrategy,
     };
+    use crate::versioning::manager::VersionUpdate;
     use std::path::PathBuf;
     use structopt::StructOpt;
 
@@ -779,5 +799,38 @@ mod tests {
             .unwrap();
 
         assert_eq!(packages, vec!["committy-cli"]);
+    }
+
+    #[test]
+    fn hybrid_tag_name_uses_primary_package_version() {
+        let config = create_multi_package_config();
+        let tag = hybrid_tag_name(
+            &config,
+            &[
+                VersionUpdate::new(
+                    "committy-cli".to_string(),
+                    "1.0.0".to_string(),
+                    "1.0.1".to_string(),
+                ),
+                VersionUpdate::new("docs".to_string(), "2.0.0".to_string(), "2.0.1".to_string()),
+            ],
+        );
+
+        assert_eq!(tag.as_deref(), Some("v1.0.1"));
+    }
+
+    #[test]
+    fn hybrid_tag_name_skips_when_only_independent_package_changes() {
+        let config = create_multi_package_config();
+        let tag = hybrid_tag_name(
+            &config,
+            &[VersionUpdate::new(
+                "docs".to_string(),
+                "2.0.0".to_string(),
+                "2.0.1".to_string(),
+            )],
+        );
+
+        assert!(tag.is_none());
     }
 }
