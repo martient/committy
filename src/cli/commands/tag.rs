@@ -7,6 +7,7 @@ use crate::dependency::updater::DependencyUpdater;
 use crate::error::CliError;
 use crate::git;
 use crate::input;
+use crate::scope::detector::ScopeDetector;
 use crate::telemetry;
 use crate::versioning::hybrid::HybridVersioning;
 use crate::versioning::independent::IndependentVersioning;
@@ -245,11 +246,17 @@ impl TagCommand {
 
         // Step 1: Get commit log since last tag
         let repo = git::discover_repository_from(repo_path)?;
-        let commit_log = self.get_commit_log_since_last_tag(&repo, git_command_config)?;
+        let latest_tag = self.find_latest_tag(&repo)?;
+        let latest_tag = (!latest_tag.is_empty()).then_some(latest_tag);
+        let commit_log =
+            self.get_commit_log_since_tag(&repo, latest_tag.as_deref(), git_command_config)?;
         debug!("Commit log since last tag:\n{}", commit_log);
 
-        // Step 2: Detect scopes (affected packages) from commit log
-        let affected_packages = self.detect_affected_packages(&commit_log, repo_config)?;
+        // Step 2: Detect affected packages from commit scopes and changed files
+        let changed_files =
+            self.get_changed_files_since_tag(&repo, latest_tag.as_deref(), git_command_config)?;
+        let affected_packages =
+            self.detect_affected_packages(&commit_log, &changed_files, repo_config)?;
         if affected_packages.is_empty() {
             info!("ℹ️ No packages affected by commits. Skipping tag creation.");
             return Ok(());
@@ -292,17 +299,16 @@ impl TagCommand {
     }
 
     /// Get commit log since last tag
-    fn get_commit_log_since_last_tag(
+    fn get_commit_log_since_tag(
         &self,
         repo: &git2::Repository,
+        latest_tag: Option<&str>,
         git_command_config: &git::GitCommandConfig,
     ) -> Result<String, CliError> {
-        // Try to find the latest tag
-        let latest_tag = self.find_latest_tag(repo)?;
-        let range = if latest_tag.is_empty() {
+        let range = if latest_tag.is_none() {
             "HEAD".to_string()
         } else {
-            format!("{}..HEAD", latest_tag)
+            format!("{}..HEAD", latest_tag.unwrap())
         };
 
         // Use git log to get commit messages
@@ -320,6 +326,41 @@ impl TagCommand {
             .map_err(|e| CliError::Generic(format!("Invalid UTF-8 in commit log: {}", e)))
     }
 
+    fn get_changed_files_since_tag(
+        &self,
+        repo: &git2::Repository,
+        latest_tag: Option<&str>,
+        git_command_config: &git::GitCommandConfig,
+    ) -> Result<Vec<PathBuf>, CliError> {
+        let repo_path = repo
+            .workdir()
+            .ok_or_else(|| CliError::GitError(git2::Error::from_str("No working directory")))?;
+        let output = if let Some(tag) = latest_tag {
+            let range = format!("{tag}..HEAD");
+            git::run_git_capture(
+                repo_path,
+                &["diff", "--name-only", &range],
+                "get changed files",
+                git_command_config,
+            )?
+        } else {
+            git::run_git_capture(
+                repo_path,
+                &["log", "--format=", "--name-only", "HEAD"],
+                "get changed files",
+                git_command_config,
+            )?
+        };
+        let files = String::from_utf8(output.stdout)
+            .map_err(|e| CliError::Generic(format!("Invalid UTF-8 in changed file list: {}", e)))?
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(PathBuf::from)
+            .collect::<Vec<_>>();
+        Ok(files)
+    }
+
     /// Find the latest tag in the repository
     fn find_latest_tag(&self, repo: &git2::Repository) -> Result<String, CliError> {
         let tags = repo.tag_names(None).map_err(CliError::from)?;
@@ -330,6 +371,7 @@ impl TagCommand {
     fn detect_affected_packages(
         &self,
         commit_log: &str,
+        changed_files: &[PathBuf],
         config: &RepositoryConfig,
     ) -> Result<Vec<String>, CliError> {
         let mut packages = std::collections::HashSet::new();
@@ -342,6 +384,18 @@ impl TagCommand {
             if let Some(caps) = scope_regex.captures(line) {
                 let scope = caps.get(1).map(|m| m.as_str()).unwrap_or("");
                 for package in resolve_scope_packages(scope, config) {
+                    packages.insert(package);
+                }
+            }
+        }
+
+        if !changed_files.is_empty() {
+            let detector = ScopeDetector::new(config.clone(), &self.repo_path);
+            let changed_file_scopes = detector.detect_from_files(changed_files).map_err(|e| {
+                CliError::Generic(format!("Failed to detect scopes from files: {e}"))
+            })?;
+            for scope in changed_file_scopes {
+                for package in resolve_scope_packages(&scope, config) {
                     packages.insert(package);
                 }
             }
@@ -620,6 +674,7 @@ mod tests {
         PackageConfig, RepositoryConfig, RepositoryMetadata, RepositoryType, ScopeConfig,
         ScopeMapping, VersioningConfig, VersioningStrategy,
     };
+    use std::path::PathBuf;
     use structopt::StructOpt;
 
     fn create_multi_package_config() -> RepositoryConfig {
@@ -705,9 +760,24 @@ mod tests {
         let command = TagCommand::from_iter(["tag"]);
         let config = create_multi_package_config();
         let packages = command
-            .detect_affected_packages("feat(core, docs)!: release both\n", &config)
+            .detect_affected_packages("feat(core, docs)!: release both\n", &[], &config)
             .unwrap();
 
         assert_eq!(packages, vec!["committy-cli", "docs"]);
+    }
+
+    #[test]
+    fn detect_affected_packages_falls_back_to_changed_files() {
+        let command = TagCommand::from_iter(["tag"]);
+        let config = create_multi_package_config();
+        let packages = command
+            .detect_affected_packages(
+                "fix: tag mapping\n",
+                &[PathBuf::from("src/cli/commands/tag.rs")],
+                &config,
+            )
+            .unwrap();
+
+        assert_eq!(packages, vec!["committy-cli"]);
     }
 }
