@@ -334,21 +334,22 @@ impl TagCommand {
     ) -> Result<Vec<String>, CliError> {
         let mut packages = std::collections::HashSet::new();
 
-        // Extract scopes from commit messages (pattern: type(scope): message)
-        let scope_regex = Regex::new(r"^[a-z]+\(([^)]+)\):")
+        // Extract scopes from commit headers (pattern: type(scope)!: message)
+        let scope_regex = Regex::new(r"^[a-z0-9-]+\(([^)]+)\)(?:!)?:")
             .map_err(|e| CliError::Generic(format!("Regex error: {}", e)))?;
 
         for line in commit_log.lines() {
             if let Some(caps) = scope_regex.captures(line) {
                 let scope = caps.get(1).map(|m| m.as_str()).unwrap_or("");
-                // Check if scope matches a package
-                if config.packages.iter().any(|p| p.name == scope) {
-                    packages.insert(scope.to_string());
+                for package in resolve_scope_packages(scope, config) {
+                    packages.insert(package);
                 }
             }
         }
 
-        Ok(packages.into_iter().collect())
+        let mut packages = packages.into_iter().collect::<Vec<_>>();
+        packages.sort();
+        Ok(packages)
     }
 
     /// Determine version bump type from commit messages
@@ -568,5 +569,145 @@ impl TagCommand {
             "push tag to remote",
             git_command_config,
         )
+    }
+}
+
+fn resolve_scope_packages(scope_value: &str, config: &RepositoryConfig) -> Vec<String> {
+    let mut packages = std::collections::HashSet::new();
+    let separator = config.scopes.scope_separator.as_str();
+
+    let scopes = if separator.is_empty() {
+        vec![scope_value]
+    } else {
+        scope_value.split(separator).collect::<Vec<_>>()
+    };
+
+    for scope in scopes {
+        let scope = scope.trim();
+        if scope.is_empty() {
+            continue;
+        }
+
+        if config.packages.iter().any(|package| package.name == scope) {
+            packages.insert(scope.to_string());
+        }
+
+        for mapping in config
+            .scopes
+            .mappings
+            .iter()
+            .filter(|mapping| mapping.scope == scope)
+        {
+            if config
+                .packages
+                .iter()
+                .any(|package| package.name == mapping.package)
+            {
+                packages.insert(mapping.package.clone());
+            }
+        }
+    }
+
+    let mut packages = packages.into_iter().collect::<Vec<_>>();
+    packages.sort();
+    packages
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{resolve_scope_packages, TagCommand};
+    use crate::config::repository::{
+        PackageConfig, RepositoryConfig, RepositoryMetadata, RepositoryType, ScopeConfig,
+        ScopeMapping, VersioningConfig, VersioningStrategy,
+    };
+    use structopt::StructOpt;
+
+    fn create_multi_package_config() -> RepositoryConfig {
+        RepositoryConfig {
+            repository: RepositoryMetadata {
+                name: "workspace".to_string(),
+                repo_type: RepositoryType::MultiPackage,
+                description: None,
+            },
+            versioning: VersioningConfig {
+                strategy: VersioningStrategy::Hybrid,
+                unified_version: None,
+                rules: None,
+            },
+            packages: vec![
+                PackageConfig {
+                    name: "committy-cli".to_string(),
+                    package_type: "rust-cargo".to_string(),
+                    path: ".".to_string(),
+                    version_file: "Cargo.toml".to_string(),
+                    version_field: "package.version".to_string(),
+                    primary: true,
+                    sync_with: None,
+                    independent: false,
+                    workspace_member: false,
+                    description: None,
+                },
+                PackageConfig {
+                    name: "docs".to_string(),
+                    package_type: "node-npm".to_string(),
+                    path: "docs".to_string(),
+                    version_file: "package.json".to_string(),
+                    version_field: "version".to_string(),
+                    primary: false,
+                    sync_with: None,
+                    independent: true,
+                    workspace_member: false,
+                    description: None,
+                },
+            ],
+            dependencies: vec![],
+            scopes: ScopeConfig {
+                auto_detect: true,
+                require_scope_for_multi_package: true,
+                allow_multiple_scopes: true,
+                scope_separator: ",".to_string(),
+                mappings: vec![
+                    ScopeMapping {
+                        pattern: "src/**".to_string(),
+                        scope: "core".to_string(),
+                        package: "committy-cli".to_string(),
+                        description: None,
+                    },
+                    ScopeMapping {
+                        pattern: "docs/**".to_string(),
+                        scope: "docs".to_string(),
+                        package: "docs".to_string(),
+                        description: None,
+                    },
+                ],
+            },
+            commit_rules: Default::default(),
+            git: Default::default(),
+            convention: None,
+            release: None,
+            changelog: None,
+            workspace: None,
+        }
+    }
+
+    #[test]
+    fn resolve_scope_packages_uses_scope_mappings() {
+        let config = create_multi_package_config();
+
+        assert_eq!(
+            resolve_scope_packages("core", &config),
+            vec!["committy-cli"]
+        );
+    }
+
+    #[test]
+    fn detect_affected_packages_accepts_breaking_multi_scope_headers() {
+        let command = TagCommand::from_iter(["tag"]);
+        let config = create_multi_package_config();
+        let packages = command
+            .detect_affected_packages("feat(core, docs)!: release both\n", &config)
+            .unwrap();
+
+        assert_eq!(packages, vec!["committy-cli", "docs"]);
     }
 }
