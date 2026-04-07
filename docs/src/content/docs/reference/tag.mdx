@@ -45,6 +45,9 @@ committy --non-interactive tag --bump-files
 - __--output__ `<text|json>`
   Output format. Defaults to `text`.
 
+- __--git-config__ `<key=value>`
+  Repeatable native Git override passed as `git -c key=value`. Useful for per-command SSH transport or signing config.
+
 ## Flags (TagGeneratorOptions)
 
 - __--default-bump__ `<string>` (default: `minor`)
@@ -125,3 +128,9 @@ committy --non-interactive tag --not-with-v
 # Publish after preview
 committy --non-interactive tag --dry-run --output json
 committy --non-interactive tag --publish --confirm-publish --output json
+
+# SSH-sign a tag with a specific signing identity
+committy --non-interactive tag --name v1.2.3 \
+  --git-config 'gpg.format=ssh' \
+  --git-config "user.signingkey=$HOME/.ssh/signing_key.pub"
+```

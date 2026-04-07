@@ -21,13 +21,14 @@ committy --non-interactive group-commit --mode plan --output json [--include-uns
 
 ```bash
 committy --non-interactive group-commit --mode apply --output json \
-  [--include-unstaged] [--auto-stage] [--push --confirm-push]
+  [--include-unstaged] [--auto-stage] [--push --confirm-push] [--git-config key=value]
 ```
 
 - Creates one commit per group using validated messages.
 - `--auto-stage`: stages only the files of the current group before committing.
 - `--push`: push commits after creation.
 - `--confirm-push`: required whenever `--push` is used.
+- `--git-config key=value`: repeatable native Git override for apply-mode git subprocesses.
 
 ## Grouping categories
 

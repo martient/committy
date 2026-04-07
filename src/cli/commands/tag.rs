@@ -47,6 +47,12 @@ pub struct TagCommand {
     #[structopt(long, help = "Update dependency references in other packages")]
     update_deps: bool,
 
+    #[structopt(
+        long = "git-config",
+        help = "Pass through git -c key=value overrides (repeatable)"
+    )]
+    git_config: Vec<String>,
+
     #[structopt(long, default_value = ".", parse(from_os_str))]
     repo_path: PathBuf,
 }
@@ -92,6 +98,9 @@ impl Command for TagCommand {
             return Err(CliError::StagedChanges);
         }
 
+        let git_command_config =
+            git::resolve_git_command_config(&effective_repo_path, &self.git_config)?;
+
         // Load merged config to detect multi-package mode
         let merged_config = MergedConfig::load(&effective_repo_path).ok();
 
@@ -106,8 +115,11 @@ impl Command for TagCommand {
 
         if let Some(name) = &self.name {
             // Explicit tag name provided - use legacy flow
-            let version_manager =
-                git::TagGenerator::new(tag_options.clone(), self.bump_config_files);
+            let version_manager = git::TagGenerator::new(
+                tag_options.clone(),
+                self.bump_config_files,
+                git_command_config.clone(),
+            );
             version_manager.create_and_push_tag(&version_manager.open_repository()?, name)?;
             let payload = TagCommandOutput {
                 command: "tag".into(),
@@ -130,11 +142,15 @@ impl Command for TagCommand {
                 non_interactive,
                 merged_config.as_ref().unwrap(),
                 &effective_repo_path,
+                &git_command_config,
             )?;
         } else if non_interactive {
             // In non-interactive mode, auto-calculate and act based on options
-            let mut version_manager =
-                git::TagGenerator::new(tag_options.clone(), self.bump_config_files);
+            let mut version_manager = git::TagGenerator::new(
+                tag_options.clone(),
+                self.bump_config_files,
+                git_command_config.clone(),
+            );
             version_manager.run()?;
 
             // Print the calculated tag so callers/tests can consume it
@@ -163,7 +179,11 @@ impl Command for TagCommand {
                 info!("Abort");
                 return Ok(());
             }
-            let mut version_manager = git::TagGenerator::new(tag_options, self.bump_config_files);
+            let mut version_manager = git::TagGenerator::new(
+                tag_options,
+                self.bump_config_files,
+                git_command_config.clone(),
+            );
             version_manager.run()?;
             let payload = TagCommandOutput {
                 command: "tag".into(),
@@ -211,6 +231,7 @@ impl TagCommand {
         _non_interactive: bool,
         config: &MergedConfig,
         repo_path: &Path,
+        git_command_config: &git::GitCommandConfig,
     ) -> Result<(), CliError> {
         let repo_config = config
             .repository
@@ -224,7 +245,7 @@ impl TagCommand {
 
         // Step 1: Get commit log since last tag
         let repo = git::discover_repository_from(repo_path)?;
-        let commit_log = self.get_commit_log_since_last_tag(&repo)?;
+        let commit_log = self.get_commit_log_since_last_tag(&repo, git_command_config)?;
         debug!("Commit log since last tag:\n{}", commit_log);
 
         // Step 2: Detect scopes (affected packages) from commit log
@@ -264,14 +285,18 @@ impl TagCommand {
         }
 
         // Step 7: Create tags based on versioning strategy
-        self.create_multi_package_tags(&repo, repo_config, &version_updates)?;
+        self.create_multi_package_tags(&repo, repo_config, &version_updates, git_command_config)?;
         info!("✅ Tags created successfully");
 
         Ok(())
     }
 
     /// Get commit log since last tag
-    fn get_commit_log_since_last_tag(&self, repo: &git2::Repository) -> Result<String, CliError> {
+    fn get_commit_log_since_last_tag(
+        &self,
+        repo: &git2::Repository,
+        git_command_config: &git::GitCommandConfig,
+    ) -> Result<String, CliError> {
         // Try to find the latest tag
         let latest_tag = self.find_latest_tag(repo)?;
         let range = if latest_tag.is_empty() {
@@ -281,13 +306,15 @@ impl TagCommand {
         };
 
         // Use git log to get commit messages
-        let repo_path = repo.path();
-
-        let output = std::process::Command::new("git")
-            .args(["log", "--pretty=%B", &range])
-            .current_dir(repo_path)
-            .output()
-            .map_err(|e| CliError::Generic(format!("Failed to get commit log: {}", e)))?;
+        let repo_path = repo
+            .workdir()
+            .ok_or_else(|| CliError::GitError(git2::Error::from_str("No working directory")))?;
+        let output = git::run_git_capture(
+            repo_path,
+            &["log", "--pretty=%B", &range],
+            "get commit log",
+            git_command_config,
+        )?;
 
         String::from_utf8(output.stdout)
             .map_err(|e| CliError::Generic(format!("Invalid UTF-8 in commit log: {}", e)))
@@ -467,6 +494,7 @@ impl TagCommand {
         repo: &git2::Repository,
         config: &RepositoryConfig,
         updates: &[crate::versioning::manager::VersionUpdate],
+        git_command_config: &git::GitCommandConfig,
     ) -> Result<(), CliError> {
         let strategy = &config.versioning.strategy;
 
@@ -475,7 +503,7 @@ impl TagCommand {
                 // Single tag for all packages
                 if let Some(update) = updates.first() {
                     let tag_name = format!("v{}", update.new_version);
-                    self.create_and_push_tag(repo, &tag_name)?;
+                    self.create_and_push_tag(repo, &tag_name, git_command_config)?;
                     info!("📌 Created unified tag: {}", tag_name);
                 }
             }
@@ -483,7 +511,7 @@ impl TagCommand {
                 // Per-package tags
                 for update in updates {
                     let tag_name = format!("{}-v{}", update.package_name, update.new_version);
-                    self.create_and_push_tag(repo, &tag_name)?;
+                    self.create_and_push_tag(repo, &tag_name, git_command_config)?;
                     info!("📌 Created tag: {}", tag_name);
                 }
             }
@@ -493,21 +521,27 @@ impl TagCommand {
     }
 
     /// Create a git tag and optionally push to remote
-    fn create_and_push_tag(&self, repo: &git2::Repository, tag_name: &str) -> Result<(), CliError> {
+    fn create_and_push_tag(
+        &self,
+        repo: &git2::Repository,
+        tag_name: &str,
+        git_command_config: &git::GitCommandConfig,
+    ) -> Result<(), CliError> {
         let repo_path = repo
             .workdir()
             .ok_or_else(|| CliError::GitError(git2::Error::from_str("No working directory")))?;
-        self.run_git(
+        git::run_git(
             repo_path,
             &["tag", "-a", tag_name, "-m", tag_name],
             "create tag",
+            git_command_config,
         )?;
 
         info!("✅ Tag '{}' created locally", tag_name);
 
         // Try to push to remote
         if self.tag_options.will_publish_remote() {
-            if let Err(e) = self.push_tag_to_remote(repo, tag_name) {
+            if let Err(e) = self.push_tag_to_remote(repo, tag_name, git_command_config) {
                 debug!("Failed to push tag to remote: {}", e);
             } else {
                 info!("📤 Tag '{}' pushed to remote", tag_name);
@@ -518,35 +552,21 @@ impl TagCommand {
     }
 
     /// Push tag to remote repository
-    fn push_tag_to_remote(&self, repo: &git2::Repository, tag_name: &str) -> Result<(), CliError> {
+    fn push_tag_to_remote(
+        &self,
+        repo: &git2::Repository,
+        tag_name: &str,
+        git_command_config: &git::GitCommandConfig,
+    ) -> Result<(), CliError> {
         repo.find_remote("origin").map_err(CliError::from)?;
         let repo_path = repo
             .workdir()
             .ok_or_else(|| CliError::GitError(git2::Error::from_str("No working directory")))?;
-        self.run_git(
+        git::run_git(
             repo_path,
             &["push", "origin", &format!("refs/tags/{tag_name}")],
             "push tag to remote",
+            git_command_config,
         )
-    }
-
-    fn run_git(&self, repo_path: &Path, args: &[&str], action: &str) -> Result<(), CliError> {
-        let output = std::process::Command::new("git")
-            .current_dir(repo_path)
-            .args(args)
-            .output()
-            .map_err(CliError::IoError)?;
-
-        if output.status.success() {
-            return Ok(());
-        }
-
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        let detail = if stderr.is_empty() {
-            format!("git {:?} failed", args)
-        } else {
-            stderr
-        };
-        Err(CliError::Generic(format!("Failed to {action}: {detail}")))
     }
 }

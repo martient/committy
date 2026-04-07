@@ -1,5 +1,9 @@
 // Multi-package support modules
+pub mod changelog;
+pub mod convention;
+pub mod git;
 pub mod hierarchy;
+pub mod release;
 pub mod repository;
 
 pub const COMMIT_TYPES: &[&str] = &[
@@ -28,6 +32,11 @@ use std::fs;
 use std::path::PathBuf;
 use uuid::Uuid;
 
+use crate::config::git::{validate_git_config_overrides, GitConfig};
+use crate::config::{
+    changelog::ChangelogConfig, convention::ConventionConfig, release::ReleaseConfig,
+};
+
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct Config {
@@ -39,6 +48,10 @@ pub struct Config {
     pub major_regex: String,
     pub minor_regex: String,
     pub patch_regex: String,
+    pub git: GitConfig,
+    pub convention: Option<ConventionConfig>,
+    pub release: Option<ReleaseConfig>,
+    pub changelog: Option<ChangelogConfig>,
 }
 
 impl Default for Config {
@@ -53,6 +66,10 @@ impl Default for Config {
             major_regex: MAJOR_REGEX.to_string(),
             minor_regex: MINOR_REGEX.to_string(),
             patch_regex: PATCH_REGEX.to_string(),
+            git: GitConfig::default(),
+            convention: None,
+            release: None,
+            changelog: None,
         }
     }
 }
@@ -71,6 +88,7 @@ impl Config {
         debug!("Read configuration content: {config_str}");
         // Load config with possible missing fields (serde default fills them)
         let mut config: Self = toml::from_str(&config_str)?;
+        config.validate()?;
         // If any field is still default (i.e., was missing in the file), re-save
         let mut needs_save = false;
         if config.user_id.is_empty() {
@@ -86,6 +104,7 @@ impl Config {
     }
 
     pub fn save(&self) -> Result<()> {
+        self.validate()?;
         let config_path = Self::get_config_path()?;
         debug!("Saving configuration");
         debug!("Configuration path: {config_path:?}");
@@ -101,6 +120,10 @@ impl Config {
         fs::write(config_path, config_str)?;
         debug!("Configuration saved successfully");
         Ok(())
+    }
+
+    fn validate(&self) -> Result<()> {
+        validate_git_config_overrides(&self.git.config_overrides)
     }
 
     fn get_config_path() -> Result<PathBuf> {
@@ -146,6 +169,10 @@ mod tests {
             major_regex: MAJOR_REGEX.to_string(),
             minor_regex: MINOR_REGEX.to_string(),
             patch_regex: PATCH_REGEX.to_string(),
+            git: GitConfig::default(),
+            convention: None,
+            release: None,
+            changelog: None,
         };
 
         (temp_dir, config)

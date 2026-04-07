@@ -1,8 +1,13 @@
 // Configuration hierarchy: repository config > user config > defaults
 // Q4: Repository config always wins
 
-use super::repository::RepositoryConfig;
 use super::Config as UserConfig;
+use super::{
+    changelog::ChangelogConfig,
+    convention::ConventionConfig,
+    release::ReleaseConfig,
+    repository::{CommitRulesConfig, CustomCommitType, RepositoryConfig},
+};
 use anyhow::Result;
 use std::path::Path;
 
@@ -67,9 +72,97 @@ impl MergedConfig {
         self.repository.as_ref()
     }
 
+    /// Get effective git config overrides in precedence order before CLI overrides
+    pub fn get_git_config_overrides(&self) -> Vec<String> {
+        let mut overrides = self.user.git.config_overrides.clone();
+        if let Some(repository) = &self.repository {
+            overrides.extend(repository.git.config_overrides.iter().cloned());
+        }
+        overrides
+    }
+
+    pub fn effective_convention(&self) -> ConventionConfig {
+        let mut config = self
+            .user
+            .convention
+            .clone()
+            .unwrap_or_else(ConventionConfig::default);
+
+        if let Some(repository) = &self.repository {
+            if let Some(repository_convention) = &repository.convention {
+                config = repository_convention.clone();
+            }
+            apply_legacy_commit_rules(&mut config, &repository.commit_rules);
+        }
+
+        config
+    }
+
+    pub fn effective_release(&self) -> ReleaseConfig {
+        let mut config = self.user.release.clone().unwrap_or_default();
+        if let Some(repository) = &self.repository {
+            if let Some(repository_release) = &repository.release {
+                config = repository_release.clone();
+            }
+        }
+        config
+    }
+
+    pub fn effective_changelog(&self) -> ChangelogConfig {
+        let mut config = self.user.changelog.clone().unwrap_or_default();
+        if let Some(repository) = &self.repository {
+            if let Some(repository_changelog) = &repository.changelog {
+                config = repository_changelog.clone();
+            }
+        }
+        config
+    }
+
     /// Get user config
     pub fn user_config(&self) -> &UserConfig {
         &self.user
+    }
+}
+
+fn apply_legacy_commit_rules(config: &mut ConventionConfig, rules: &CommitRulesConfig) {
+    config.max_subject_length = rules.max_subject_length;
+    config.max_body_line_length = rules.max_body_line_length;
+    config.require_body = rules.require_body;
+
+    if !rules.allowed_types.is_empty() {
+        config
+            .types
+            .retain(|item| rules.allowed_types.contains(&item.name));
+    }
+
+    for custom in &rules.custom_types {
+        if let Some(existing) = config
+            .types
+            .iter_mut()
+            .find(|item| item.name == custom.name)
+        {
+            existing.description = custom.description.clone();
+            existing.bump = custom.bump.clone();
+        } else {
+            config.types.push(custom_commit_type_to_convention(custom));
+        }
+    }
+
+    if let Some(type_question) = config.questions.iter_mut().find(|item| item.key == "type") {
+        type_question.choices = config.types.iter().map(|item| item.name.clone()).collect();
+    }
+}
+
+fn custom_commit_type_to_convention(
+    custom: &CustomCommitType,
+) -> super::convention::ConventionType {
+    super::convention::ConventionType {
+        name: custom.name.clone(),
+        description: custom.description.clone(),
+        bump: custom.bump.clone(),
+        changelog_section: "Custom".to_string(),
+        aliases: vec![],
+        hidden: false,
     }
 }
 
@@ -125,6 +218,10 @@ mod tests {
             dependencies: vec![],
             scopes: Default::default(),
             commit_rules: Default::default(),
+            git: Default::default(),
+            convention: None,
+            release: None,
+            changelog: None,
             workspace: None,
         };
 

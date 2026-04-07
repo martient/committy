@@ -1,10 +1,17 @@
 pub mod amend;
 pub mod branch;
+pub mod bump;
+pub mod changelog;
 pub mod commit;
 pub mod config;
+pub mod example;
 pub mod group_commit;
+pub mod info;
 pub mod init;
 pub mod lint;
 pub mod lint_message;
+pub mod ls;
 pub mod packages;
+pub mod schema;
 pub mod tag;
+pub mod version;

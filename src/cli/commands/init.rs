@@ -177,6 +177,10 @@ impl Command for InitCommand {
                 mappings: vec![],
             },
             commit_rules: CommitRulesConfig::default(),
+            git: Default::default(),
+            convention: Some(Default::default()),
+            release: Some(Default::default()),
+            changelog: Some(Default::default()),
             workspace: None,
         };
 

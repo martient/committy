@@ -51,6 +51,10 @@ EOF
   git config --global tag.gpgsign true
   git config --global gpg.program gpg
   git config --global init.defaultBranch main
+
+  ssh-keygen -t ed25519 -N '' -C committy-e2e@example.com -f "$HOME/.ssh/signing_key" >/dev/null
+  printf 'committy-e2e@example.com %s\n' "$(cat "$HOME/.ssh/signing_key.pub")" > "$HOME/.ssh/allowed_signers"
+  chmod 600 "$HOME/.ssh/allowed_signers"
 }
 
 create_remote_user() {
@@ -121,6 +125,14 @@ assert_signed_commit() {
   run_git "$repo_path" verify-commit HEAD >/dev/null
 }
 
+assert_ssh_signed_commit() {
+  local repo_path="$1"
+  run_git "$repo_path" \
+    -c gpg.format=ssh \
+    -c "gpg.ssh.allowedSignersFile=$HOME/.ssh/allowed_signers" \
+    verify-commit HEAD >/dev/null
+}
+
 assert_signed_tag() {
   local repo_path="$1"
   local tag_name="$2"
@@ -179,7 +191,12 @@ exercise_repo() {
   "$committy_bin" --non-interactive commit \
     --repo-path "$worktree" \
     --type fix \
-    --message "prepare ${repo_name} fetch validation"
+    --message "prepare ${repo_name} fetch validation" \
+    --git-config "gpg.format=ssh" \
+    --git-config "user.signingkey=$HOME/.ssh/signing_key.pub" \
+    --git-config "gpg.ssh.allowedSignersFile=$HOME/.ssh/allowed_signers"
+
+  assert_ssh_signed_commit "$worktree"
 
   "$committy_bin" --non-interactive tag \
     --repo-path "$worktree" \

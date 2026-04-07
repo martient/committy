@@ -72,6 +72,9 @@ committy --non-interactive commit \
 - __--output__ `<text|json>`
   Output format. Use `json` for agent/system-prompt integrations.
 
+- __--git-config__ `<key=value>`
+  Repeatable native Git override passed as `git -c key=value`. Useful for per-command SSH transport or signing config.
+
 - __--repo-path__ `<path>`
   Resolve the target repository without changing the process working directory.
 
@@ -104,6 +107,12 @@ committy --non-interactive commit \
   --type feat --scope storage \
   --breaking-change \
   --message "drop legacy v1 API"
+
+# Alternate SSH identity for this commit only
+committy --non-interactive commit \
+  --type feat \
+  --message "use customer ssh identity" \
+  --git-config 'core.sshCommand=ssh -i ~/.ssh/customer_key -o IdentitiesOnly=yes'
 ```
 
 ## Exit codes

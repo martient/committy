@@ -1,0 +1,70 @@
+---
+title: Troubleshooting
+description: Common recovery steps and Git/SSH override guidance
+---
+
+## April 7, 2026 recovery note
+
+### Symptom
+
+Some production builds on April 7, 2026 failed when users ran plain `committy` with staged changes and no subcommand. The error looked like:
+
+```text
+Failed to discover repository from ""
+Git error: Could not find Git repository in current directory or any parent directories
+```
+
+### Cause
+
+The top-level fallback path created a default `commit` command with an empty `repo_path` instead of `"."`.
+
+### Fixed behavior
+
+Current builds create the fallback commit command with:
+
+- `repo_path = "."`
+- `output = "text"`
+- no implicit Git overrides
+
+If you still see the empty-path error, upgrade to a build that includes the April 7, 2026 recovery fix.
+
+## Per-command Git, SSH, and signing overrides
+
+Committy uses native `git` behavior by default. It does not force a single SSH key or signing mode.
+
+When you need a command-specific override, pass repeatable `--git-config key=value` flags. Committy forwards them as `git -c key=value ...`.
+
+### Alternate SSH transport identity
+
+```bash
+committy --non-interactive commit \
+  --type feat \
+  --message "use customer ssh identity" \
+  --git-config 'core.sshCommand=ssh -i ~/.ssh/customer_key -o IdentitiesOnly=yes'
+```
+
+### SSH signing override
+
+```bash
+committy --non-interactive tag --name v1.2.3 \
+  --git-config 'gpg.format=ssh' \
+  --git-config "user.signingkey=$HOME/.ssh/signing_key.pub"
+```
+
+### Persistent overrides
+
+User config and repo config both support:
+
+```toml
+[git]
+config_overrides = [
+  "core.sshCommand=ssh -i ~/.ssh/customer_key -o IdentitiesOnly=yes"
+]
+```
+
+Override precedence is:
+
+1. CLI `--git-config`
+2. Repo `.committy/config.toml`
+3. User `~/.config/committy/config.toml`
+4. Normal Git config and environment

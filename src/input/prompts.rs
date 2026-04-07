@@ -18,13 +18,23 @@ fn non_interactive_env() -> bool {
             .unwrap_or(false)
 }
 
+#[allow(dead_code)]
 pub fn select_commit_type() -> Result<String, CliError> {
+    select_commit_type_from(
+        &COMMIT_TYPES
+            .iter()
+            .map(|item| item.to_string())
+            .collect::<Vec<_>>(),
+    )
+}
+
+pub fn select_commit_type_from(types: &[String]) -> Result<String, CliError> {
     if non_interactive_env() {
         return Err(CliError::InputError(
             "Non-interactive environment: cannot prompt for commit type".to_string(),
         ));
     }
-    let commit_type = Select::new("Select the type of commit:", COMMIT_TYPES.to_vec())
+    let commit_type = Select::new("Select the type of commit:", types.to_vec())
         .with_help_message("Use arrow keys to navigate, Enter to select")
         .prompt()
         .map_err(|e| CliError::InputError(e.to_string()))?;

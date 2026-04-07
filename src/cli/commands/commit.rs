@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use crate::cli::Command;
 use crate::config::hierarchy::MergedConfig;
 use crate::config::repository::RepositoryConfig;
+use crate::convention::Convention;
 use crate::error::CliError;
 use crate::git;
 use crate::input;
@@ -17,7 +18,7 @@ use log::{debug, info, warn};
 use serde::Serialize;
 use structopt::StructOpt;
 
-#[derive(Debug, StructOpt, Default)]
+#[derive(Debug, StructOpt)]
 pub struct CommitCommand {
     #[structopt(long = "type", help = "Type of commit (e.g., feat, fix, docs)")]
     pub(crate) commit_type: Option<String>,
@@ -31,6 +32,13 @@ pub struct CommitCommand {
     #[structopt(long, help = "Long/detailed commit message")]
     pub(crate) long_message: Option<String>,
 
+    #[structopt(
+        long = "message-file",
+        parse(from_os_str),
+        help = "Read the full commit message from a file"
+    )]
+    pub(crate) message_file: Option<PathBuf>,
+
     #[structopt(long, help = "Mark this as a breaking change")]
     pub(crate) breaking_change: bool,
 
@@ -42,6 +50,12 @@ pub struct CommitCommand {
 
     #[structopt(long, default_value = "text", possible_values = &["text", "json"])]
     pub(crate) output: String,
+
+    #[structopt(
+        long = "git-config",
+        help = "Pass through git -c key=value overrides (repeatable)"
+    )]
+    pub(crate) git_config: Vec<String>,
 
     #[structopt(long, default_value = ".", parse(from_os_str))]
     pub(crate) repo_path: PathBuf,
@@ -68,6 +82,22 @@ impl Command for CommitCommand {
 }
 
 impl CommitCommand {
+    pub(crate) fn default_interactive() -> Self {
+        Self {
+            commit_type: None,
+            scope: None,
+            message: None,
+            long_message: None,
+            message_file: None,
+            breaking_change: false,
+            amend: false,
+            dry_run: false,
+            output: "text".to_string(),
+            git_config: vec![],
+            repo_path: PathBuf::from("."),
+        }
+    }
+
     pub(crate) fn execute_with_command_name(
         &self,
         non_interactive: bool,
@@ -77,6 +107,8 @@ impl CommitCommand {
         let repo_path = repo
             .workdir()
             .ok_or_else(|| CliError::GitError(git2::Error::from_str("No working directory")))?;
+        let git_command_config = git::resolve_git_command_config(repo_path, &self.git_config)?;
+        let convention = Convention::load(repo_path)?;
         let has_staged_changes = git::has_staged_changes_from(repo_path)?;
         if !self.amend && !has_staged_changes {
             return Err(CliError::NoStagedChanges);
@@ -87,11 +119,28 @@ impl CommitCommand {
         // In non-interactive mode (from the command root), all required fields must be provided
         if non_interactive {
             debug!("Running in non-interactive mode");
-            if self.commit_type.is_none() || self.message.is_none() {
+            if self.message_file.is_none() && (self.commit_type.is_none() || self.message.is_none())
+            {
                 return Err(CliError::InputError(
                     "In non-interactive mode, --type and --message are required".to_string(),
                 ));
             }
+        }
+
+        if let Some(message_file) = &self.message_file {
+            let full_message = std::fs::read_to_string(message_file).map_err(CliError::IoError)?;
+            let metadata = message_metadata(&convention, &full_message);
+            return self.finish_commit(
+                repo_path,
+                command_name,
+                &git_command_config,
+                full_message,
+                metadata.commit_type,
+                metadata.scope,
+                metadata.breaking_change,
+                metadata.short_message,
+                metadata.long_message,
+            );
         }
 
         // Detect scopes from staged files early (for multi-package repositories)
@@ -128,7 +177,7 @@ impl CommitCommand {
                 )));
             }
         } else {
-            input::select_commit_type()?
+            input::select_commit_type_from(&allowed_types)?
         };
 
         // Handle breaking change
@@ -191,14 +240,40 @@ impl CommitCommand {
             None => String::new(),
         };
 
-        let full_message = git::format_commit_message(
+        let full_message = convention.render_message(
             &commit_type,
-            breaking_change,
             &scope,
             &short_message,
             &long_message,
-        );
+            breaking_change,
+        )?;
 
+        self.finish_commit(
+            repo_path,
+            command_name,
+            &git_command_config,
+            full_message,
+            commit_type,
+            scope,
+            breaking_change,
+            short_message,
+            long_message,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn finish_commit(
+        &self,
+        repo_path: &Path,
+        command_name: &str,
+        git_command_config: &git::GitCommandConfig,
+        full_message: String,
+        commit_type: String,
+        scope: String,
+        breaking_change: bool,
+        short_message: String,
+        long_message: String,
+    ) -> Result<(), CliError> {
         debug!("Formatted commit message: {full_message}");
 
         let validation_issues = check_message_format_for_repo(repo_path, &full_message)
@@ -244,7 +319,12 @@ impl CommitCommand {
             return Ok(());
         }
 
-        git::commit_changes_in(repo_path, &full_message, self.amend)?;
+        git::commit_changes_in_with_config(
+            repo_path,
+            &full_message,
+            self.amend,
+            git_command_config,
+        )?;
         self.print_output(&output, command_name);
         // fire off telemetry without making this function async
         if let Err(e) =
@@ -451,5 +531,77 @@ impl CommitCommand {
         if command_name == "amend" {
             println!("Commit amended successfully!");
         }
+    }
+}
+
+impl Default for CommitCommand {
+    fn default() -> Self {
+        Self::default_interactive()
+    }
+}
+
+struct CommitMessageMetadata {
+    commit_type: String,
+    scope: String,
+    breaking_change: bool,
+    short_message: String,
+    long_message: String,
+}
+
+fn message_metadata(convention: &Convention, full_message: &str) -> CommitMessageMetadata {
+    if let Some(parsed) = convention.parse_message(full_message) {
+        return CommitMessageMetadata {
+            commit_type: parsed.commit_type,
+            scope: parsed.scope,
+            breaking_change: parsed.breaking_change || full_message.contains("BREAKING CHANGE:"),
+            short_message: parsed.description,
+            long_message: parsed.body,
+        };
+    }
+
+    let trimmed = full_message.trim();
+    let short_message = trimmed.lines().next().unwrap_or("").to_string();
+    let long_message = trimmed
+        .split_once("\n\n")
+        .map(|(_, body)| body.to_string())
+        .unwrap_or_default();
+
+    CommitMessageMetadata {
+        commit_type: String::new(),
+        scope: String::new(),
+        breaking_change: full_message.contains("BREAKING CHANGE:"),
+        short_message,
+        long_message,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{message_metadata, CommitCommand};
+    use crate::config::convention::ConventionConfig;
+    use crate::convention::Convention;
+    use std::path::PathBuf;
+
+    #[test]
+    fn default_interactive_commit_command_uses_current_repo_and_text_output() {
+        let command = CommitCommand::default_interactive();
+
+        assert_eq!(command.output, "text");
+        assert_eq!(command.repo_path, PathBuf::from("."));
+        assert!(command.git_config.is_empty());
+        assert!(!command.amend);
+        assert!(!command.dry_run);
+    }
+
+    #[test]
+    fn message_metadata_uses_convention_parsing_when_available() {
+        let convention = Convention::from_config(ConventionConfig::default()).unwrap();
+        let metadata = message_metadata(&convention, "feat(cli)!: add command\n\nLong body");
+
+        assert_eq!(metadata.commit_type, "feat");
+        assert_eq!(metadata.scope, "cli");
+        assert!(metadata.breaking_change);
+        assert_eq!(metadata.short_message, "add command");
+        assert_eq!(metadata.long_message, "Long body");
     }
 }

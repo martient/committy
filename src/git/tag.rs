@@ -5,8 +5,9 @@ use log::{debug, error, info};
 use regex::Regex;
 use semver::Version;
 use std::path::Path;
-use std::process::Command;
 use structopt::StructOpt;
+
+use super::process::{run_git, GitCommandConfig};
 
 #[derive(Clone, Debug, StructOpt)]
 pub struct TagGeneratorOptions {
@@ -108,13 +109,18 @@ pub struct TagGenerator {
     publish_remote: bool,
     fetch: bool,
     bump_config_files: bool,
+    git_command_config: GitCommandConfig,
     pub current_tag: String,
     pub new_tag: String,
     pub is_pre_release: bool,
 }
 
 impl TagGenerator {
-    pub fn new(options: TagGeneratorOptions, allow_bump_config_files: bool) -> Self {
+    pub fn new(
+        options: TagGeneratorOptions,
+        allow_bump_config_files: bool,
+        git_command_config: GitCommandConfig,
+    ) -> Self {
         TagGenerator {
             default_bump: options.default_bump,
             not_with_v: options.not_with_v,
@@ -140,6 +146,7 @@ impl TagGenerator {
                 !options.no_fetch
             },
             bump_config_files: allow_bump_config_files,
+            git_command_config,
             current_tag: String::new(),
             new_tag: String::new(),
             is_pre_release: false,
@@ -242,6 +249,7 @@ impl TagGenerator {
                     repo_path,
                     &["fetch", "origin", "refs/tags/*:refs/tags/*"],
                     "fetch tags from remote",
+                    &self.git_command_config,
                 )
                 .inspect_err(|e| error!("{e}"))
             }
@@ -557,14 +565,19 @@ impl TagGenerator {
         for file in updated_files {
             add_args.push(file.as_str());
         }
-        run_git(repo_path, &add_args, "stage version updates")?;
-
+        run_git(
+            repo_path,
+            &add_args,
+            "stage version updates",
+            &self.git_command_config,
+        )?;
         let version_without_v = new_version.trim_start_matches('v');
         let message = format!("chore: bump version to {version_without_v}");
         run_git(
             repo_path,
             &["commit", "-m", &message],
             "create version bump commit",
+            &self.git_command_config,
         )?;
 
         // Push the commit to remote only when publishing has been explicitly confirmed
@@ -581,6 +594,7 @@ impl TagGenerator {
                             &format!("HEAD:refs/heads/{current_branch}"),
                         ],
                         "push version bump commit to remote",
+                        &self.git_command_config,
                     )?;
                     debug!("Successfully pushed commit to remote branch {current_branch}");
                     info!("✅ Pushed version bump commit to remote branch {current_branch}");
@@ -609,6 +623,7 @@ impl TagGenerator {
             repo_path,
             &["tag", "-a", new_tag, "-m", tag_message],
             "create tag",
+            &self.git_command_config,
         )?;
 
         // Only try to push when publishing has been explicitly confirmed
@@ -619,6 +634,7 @@ impl TagGenerator {
                         repo_path,
                         &["push", "origin", &format!("refs/tags/{new_tag}")],
                         "push tag to remote",
+                        &self.git_command_config,
                     )?;
                     debug!("Successfully pushed tag {new_tag} to remote");
                 }
@@ -636,26 +652,6 @@ impl TagGenerator {
         repo.workdir()
             .ok_or_else(|| CliError::GitError(git2::Error::from_str("No working directory")))
     }
-}
-
-fn run_git(repo_path: &Path, args: &[&str], action: &str) -> Result<(), CliError> {
-    let output = Command::new("git")
-        .current_dir(repo_path)
-        .args(args)
-        .output()
-        .map_err(CliError::IoError)?;
-
-    if output.status.success() {
-        return Ok(());
-    }
-
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    let detail = if stderr.is_empty() {
-        format!("git {:?} failed", args)
-    } else {
-        stderr
-    };
-    Err(CliError::Generic(format!("Failed to {action}: {detail}")))
 }
 
 #[cfg(test)]
@@ -736,7 +732,7 @@ mod tests {
             fetch: false,
             no_fetch: true,
         };
-        let gen = TagGenerator::new(opts, false);
+        let gen = TagGenerator::new(opts, false, GitCommandConfig::default());
         let (tag, pre_tag) = gen.get_latest_tags(&repo).unwrap();
         let new_tag = gen.calculate_new_tag(&repo, &tag, &pre_tag, true).unwrap();
         // Should continue from v10.0.0-beta.1, producing v10.0.0-beta.2
