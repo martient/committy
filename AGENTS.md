@@ -4,7 +4,9 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 ## Overview
 
-Committy is a Rust CLI tool for generating structured, conventional commit messages compatible with SemVer. It supports interactive and non-interactive modes, commit linting, semantic versioning via tags, AI-assisted commit messages, and group commits.
+Committy is a Rust CLI for composing conventional commits, linting history quality, planning grouped commits, generating tags, and orchestrating multi-package version updates.
+
+The current repository state is **CLI-first and JSON-friendly**. This checkout does **not** contain a checked-in `src/tui/` module or a `tui` subcommand, so agent workflows should use the machine-readable CLI commands instead of assuming a terminal UI exists.
 
 ## Essential Commands
 
@@ -31,15 +33,12 @@ cargo run
 # Run with arguments
 cargo run -- <subcommand> [options]
 
-# Examples
-cargo run -- commit
-cargo run -- amend
-cargo run -- tag --dry-run
+# Agent-safe previews
+cargo run -- branch --type feat --ticket AI42 --subject "agent flow" --dry-run --output json
+cargo run -- commit --type feat --scope core --message "add agent flow" --dry-run --output json
+cargo run -- group-commit --mode plan --output json
 cargo run -- lint --output json
-
-# NEW: Interactive TUI mode
-cargo run -- tui
-cargo run -- tui --ai  # With AI assistance
+cargo run -- tag --dry-run --output json
 ```
 
 ### Development
@@ -54,112 +53,120 @@ cargo fmt
 cargo clippy
 ```
 
+## Current CLI Surface
+
+The current checked-in command set is defined in `src/cli/mod.rs`:
+- `commit`
+- `amend`
+- `tag`
+- `lint`
+- `lint-message`
+- `branch`
+- `group-commit`
+- `init`
+- `config`
+- `packages`
+
 ## Architecture
 
 ### Module Structure
 
-**TUI Layer** (`src/tui/`) - NEW!
-- `app.rs`: Main TUI application loop and event handling
-- `state.rs`: Application state management (files, commits, groups)
-- `event.rs`: Keyboard/mouse event handling
-- `ui/`: UI components
-  - `file_list.rs`: File staging/selection interface
-  - `commit_form.rs`: Commit message input form
-  - `group_view.rs`: Auto-grouped commits view
-  - `help.rs`: Help overlay
-- Built with `ratatui` (modern fork of `tui-rs 0.19`)
-- Features:
-  - Interactive file staging/unstaging
-  - Auto-grouping changes by type (docs, tests, ci, deps, code)
-  - Multi-commit workflow support
-  - Diff preview
-  - Real-time UI updates
-
 **CLI Layer** (`src/cli/`)
-- `commands/`: Individual command implementations (commit, amend, tag, lint, lint_message, branch, group_commit, tui)
-- Each command implements the `Command` trait with `execute(&self, non_interactive: bool)` method
-- Commands are defined via `StructOpt` for argument parsing
+- `commands/`: concrete command implementations for `amend`, `branch`, `commit`, `config`, `group_commit`, `init`, `lint`, `lint_message`, `packages`, and `tag`
+- `src/main.rs`: top-level flag parsing, non-interactive mode detection, update checks, and command dispatch
+
+**Workflow + Repository Config**
+- `.committy/config.toml`: repository-level multi-package config for Committy itself
+- `src/workflow/orchestrator.rs`: coordinates scope detection, version bumps, and dependency updates
+- `src/config/hierarchy.rs` and `src/config/repository.rs`: merged config loading and repository config support
+- Current scope mapping in this repo:
+  - `src/**` → `core`
+  - `docs/**` → `docs`
 
 **Git Operations** (`src/git/`)
-- `repository.rs`: Core git operations (staged changes, file listing, config validation)
-- `commit.rs`: Commit creation and message formatting
-- `tag.rs`: Tag generation with `TagGenerator` and `TagGeneratorOptions`
-- `branch.rs`: Branch operations
-
-**Configuration** (`src/config.rs`)
-- Config file location: `~/.config/committy/config.toml`
-- Override via `COMMITTY_CONFIG_DIR` environment variable
-- Contains:
-  - `major_regex`, `minor_regex`, `patch_regex`: Configurable regex patterns for semver bump detection
-  - `metrics_enabled`: Telemetry toggle
-  - `last_update_check`, `last_metrics_reminder`: Timestamps
-  - `user_id`: Anonymous UUID for metrics
+- `repository.rs`: repository discovery, staged-file queries, and git config validation
+- `commit.rs`: commit creation and message formatting
+- `tag.rs`: tag generation helpers
+- `branch.rs`: branch operations
 
 **Linting** (`src/linter/`)
-- Validates conventional commit format
-- Used by `lint` and `lint_message` commands
-- Returns structured error information
+- Validates conventional commit messages
+- Used by `commit`, `amend`, `group-commit`, `lint`, and `lint-message`
+- Exit code `3` is reserved for lint issues
 
-**Version Management** (`src/version/`)
-- `VersionManager`: Handles version updates across multiple file types
-- Supports Cargo.toml, package.json, pyproject.toml, composer.json, pom.xml, *.csproj
-- Called during tag creation to automatically bump version files
+**Packages + Versioning** (`src/packages/`, `src/versioning/`, `src/version/`)
+- Multi-package detection and sync helpers
+- Version bump calculation for independent, unified, and hybrid strategies
+- Version file updates across supported package managers
 
 **AI Integration** (`src/ai/`)
 - Supports OpenRouter and Ollama providers
-- Used in `group_commit` command when `--ai` flag is provided
-- Generates commit message suggestions based on diffs
+- Currently used by `group-commit --ai`
 
 **Input/Prompts** (`src/input/`)
-- Interactive prompt handling via `inquire` crate
-- Input validation for commit messages, scopes, ticket names
-- Handles non-interactive mode gracefully
+- Interactive prompt handling via `inquire`
+- Validation and auto-correction helpers for commit and branch inputs
 
 **Error Handling** (`src/error.rs`)
-- `CliError`: Central error type for all CLI operations
-- Special exit code `3` for lint issues (distinct from general errors)
+- `CliError` is the central error type across commands
 
-### Key Flow: Tag Command
+### Key Flow: Commit Command
 
-1. `TagCommand::execute()` in `src/cli/commands/tag.rs`
-2. Creates `TagGenerator` with options (dry-run, fetch, publish)
-3. `TagGenerator::generate_and_create_tag()`:
-   - Fetches tags from remote (unless `--no-fetch`)
-   - Gets latest tag
-   - Analyzes commits since last tag using regex patterns from config
-   - Determines version bump (major/minor/patch)
-   - Updates version files via `VersionManager`
-   - Creates git tag (unless `--dry-run`)
-   - Publishes tag to remote (unless `--not-publish`)
+1. `src/cli/commands/commit.rs` discovers the repo and checks staged changes.
+2. It loads allowed commit types and, when repo config exists, auto-detects scopes.
+3. It formats and lints the full commit message.
+4. When `.committy/config.toml` is available, it runs `WorkflowOrchestrator` to preview or apply version/dependency side effects.
+5. `--dry-run --output json` returns the resolved message plus an optional `workflow` preview without mutating git.
+6. A real run validates git config, stages workflow-modified files if needed, and then creates or amends the commit.
 
 ### Key Flow: Group Commit
 
-1. `GroupCommitCommand::execute()` in `src/cli/commands/group_commit.rs`
-2. Groups changed files by type (docs, tests, ci, deps, build, chore, code)
-3. In "plan" mode: outputs JSON with suggested commits per group
-4. In "apply" mode: creates commits for each group (optionally with AI-generated messages)
-5. Optionally pushes commits after creation
+1. `src/cli/commands/group_commit.rs` classifies changed files into `docs`, `tests`, `ci`, `deps`, `build`, `chore`, and `code` groups.
+2. `--mode plan` returns grouped JSON output without mutations.
+3. `--mode apply` creates one validated commit per group.
+4. `--push` is only valid in apply mode and must be paired with `--confirm-push`.
 
-### Non-Interactive Mode
+## Recommended Agent Workflow
 
-- Enabled via `--non-interactive` flag, `COMMITTY_NONINTERACTIVE=1`, or `CI=1`
-- All commands support non-interactive mode
-- Prompts are skipped; sensible defaults or errors are used
+Use the current CLI states as a **preview → inspect → apply** workflow:
 
-### Build System
+1. Preview first with `--dry-run --output json` when the command supports it.
+2. Inspect `ok`, `dry_run`, `errors`, and command-specific fields such as:
+   - `branch_name` for `branch`
+   - `message`, `commit_type`, `scope`, and optional `workflow` for `commit`
+   - `mode`, `groups`, and `commits` for `group-commit`
+3. Rerun without `--dry-run` only when the preview matches the intended change.
+4. Use `--repo-path` when operating on a checkout other than the current shell directory.
+5. Before any push or release, run `committy --non-interactive lint --repo-path . --output json`.
+6. Require explicit confirmation for remote mutations:
+   - `group-commit --mode apply --push --confirm-push`
+   - `tag --publish --confirm-publish`
 
-- `build.rs`: Injects `SENTRY_DSN` and `POSTHOG_API_KEY` at compile time from environment variables
-- Defaults to "undefined" if not set
+The canonical reference for this flow is `docs/src/content/docs/reference/agent-workflows.mdx`.
+
+## Non-Interactive Mode
+
+- Enabled via `--non-interactive`, `COMMITTY_NONINTERACTIVE=1`, or `CI=1`
+- In non-interactive mode, required flags must be provided and prompts are skipped
+- This is the preferred mode for agentic or CI-driven usage
+
+## Build System
+
+- `build.rs` injects `SENTRY_DSN` and `POSTHOG_API_KEY` at compile time from environment variables
+- Defaults to `"undefined"` if those environment variables are not set
 
 ## Testing
 
-- Tests located in `tests/` directory
-- Integration tests use `assert_cmd` for CLI testing
-- Many tests require git repositories, use `tempfile` for temporary test repos
-- Tests using shared state are marked with `serial_test::serial`
+- Tests live in `tests/`
+- Integration-style CLI coverage uses `assert_cmd`
+- Temporary git repositories are created with `tempfile`
+- Good entry points for agent workflow behavior:
+  - `tests/agent_cli_tests.rs`
+  - `tests/group_commit_tests.rs`
+  - `tests/lint_message_cli_tests.rs`
 
 ## Contributing Notes
 
 - PRs should target the `develop` branch, not `main`
 - Commit messages should follow conventional commit format
-- Version is managed in `Cargo.toml` and bumped via the `tag` command
+- Versioning is managed through `Cargo.toml`, `.committy/config.toml`, and the tag/workflow helpers
