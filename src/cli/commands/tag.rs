@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use crate::cli::output::{MachineContext, API_VERSION};
 use crate::cli::Command;
 use crate::config::hierarchy::MergedConfig;
 use crate::config::repository::{RepositoryConfig, VersioningStrategy};
@@ -60,6 +61,7 @@ pub struct TagCommand {
 
 #[derive(Debug, Serialize)]
 struct TagCommandOutput {
+    api_version: u8,
     command: String,
     ok: bool,
     dry_run: bool,
@@ -123,6 +125,7 @@ impl Command for TagCommand {
             );
             version_manager.create_and_push_tag(&version_manager.open_repository()?, name)?;
             let payload = TagCommandOutput {
+                api_version: API_VERSION,
                 command: "tag".into(),
                 ok: true,
                 dry_run: self.tag_options.dry_run(),
@@ -156,6 +159,7 @@ impl Command for TagCommand {
 
             // Print the calculated tag so callers/tests can consume it
             let payload = TagCommandOutput {
+                api_version: API_VERSION,
                 command: "tag".into(),
                 ok: true,
                 dry_run: self.tag_options.dry_run(),
@@ -187,6 +191,7 @@ impl Command for TagCommand {
             );
             version_manager.run()?;
             let payload = TagCommandOutput {
+                api_version: API_VERSION,
                 command: "tag".into(),
                 ok: true,
                 dry_run: self.tag_options.dry_run(),
@@ -222,6 +227,13 @@ impl Command for TagCommand {
         }
 
         Ok(())
+    }
+
+    fn machine_context(&self) -> Option<MachineContext> {
+        (self.output == "json").then_some(MachineContext {
+            command: "tag",
+            dry_run: self.tag_options.dry_run(),
+        })
     }
 }
 

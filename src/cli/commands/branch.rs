@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use crate::cli::output::{MachineContext, API_VERSION};
 use crate::cli::Command;
 use crate::config::BRANCH_TYPES;
 use crate::error::CliError;
@@ -46,6 +47,7 @@ pub struct BranchCommand {
 
 #[derive(Debug, Serialize)]
 struct BranchCommandOutput {
+    api_version: u8,
     command: String,
     ok: bool,
     dry_run: bool,
@@ -98,6 +100,7 @@ impl Command for BranchCommand {
         }
 
         let output = BranchCommandOutput {
+            api_version: API_VERSION,
             command: "branch".into(),
             ok: errors.is_empty(),
             dry_run: self.dry_run,
@@ -156,6 +159,13 @@ impl Command for BranchCommand {
         }
 
         Ok(())
+    }
+
+    fn machine_context(&self) -> Option<MachineContext> {
+        (self.output == "json").then_some(MachineContext {
+            command: "branch",
+            dry_run: self.dry_run,
+        })
     }
 }
 
