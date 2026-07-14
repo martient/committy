@@ -796,6 +796,7 @@ mod tests {
                 ],
             },
             commit_rules: Default::default(),
+            branch_rules: Default::default(),
             git: Default::default(),
             convention: None,
             release: None,

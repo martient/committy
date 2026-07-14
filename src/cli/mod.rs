@@ -86,6 +86,7 @@ impl CliCommand {
             CliCommand::LintMessage(cmd) => cmd.machine_context(),
             CliCommand::Branch(cmd) => cmd.machine_context(),
             CliCommand::GroupCommit(cmd) => cmd.machine_context(),
+            CliCommand::Schema(cmd) => cmd.machine_context(),
             _ => None,
         }
     }

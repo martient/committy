@@ -71,6 +71,28 @@ allow_multiple_scopes = false
     .expect("Failed to write commit rules config");
 }
 
+fn write_branch_rules_config(dir: &std::path::Path, body: &str) {
+    fs::create_dir_all(dir.join(".committy")).expect("Failed to create .committy");
+    fs::write(
+        dir.join(".committy/config.toml"),
+        format!(
+            r#"packages = []
+
+[repository]
+name = "agent-repo"
+type = "single-package"
+
+[versioning]
+strategy = "independent"
+
+[branch_rules]
+{body}
+"#
+        ),
+    )
+    .expect("Failed to write branch rules config");
+}
+
 #[test]
 fn test_branch_dry_run_json_outputs_plan() {
     let temp_dir = setup_repo();
@@ -185,6 +207,79 @@ fn test_branch_invalid_type_json_outputs_one_versioned_error_document() {
         .as_str()
         .unwrap()
         .contains("Invalid branch type"));
+}
+
+#[test]
+fn test_branch_rules_require_matching_ticket_for_structured_branches() {
+    let temp_dir = setup_repo();
+    write_branch_rules_config(
+        temp_dir.path(),
+        r#"require_ticket = true
+ticket_pattern = "^ENG[0-9]+$""#,
+    );
+
+    let missing = common::committy_cmd()
+        .current_dir(&temp_dir)
+        .arg("--non-interactive")
+        .arg("branch")
+        .arg("--type")
+        .arg("feat")
+        .arg("--subject")
+        .arg("agent-flow")
+        .arg("--dry-run")
+        .arg("--output")
+        .arg("json")
+        .assert()
+        .code(1);
+    let payload: Value = serde_json::from_slice(&missing.get_output().stdout).unwrap();
+    assert_eq!(payload["errors"][0]["code"], "invalid_input");
+    assert!(payload["errors"][0]["message"]
+        .as_str()
+        .unwrap()
+        .contains("ticket is required"));
+
+    let valid = common::committy_cmd()
+        .current_dir(&temp_dir)
+        .arg("--non-interactive")
+        .arg("branch")
+        .arg("--type")
+        .arg("feat")
+        .arg("--ticket")
+        .arg("ENG42")
+        .arg("--subject")
+        .arg("agent-flow")
+        .arg("--dry-run")
+        .arg("--output")
+        .arg("json")
+        .assert()
+        .success();
+    let payload: Value = serde_json::from_slice(&valid.get_output().stdout).unwrap();
+    assert_eq!(payload["branch_name"], "feat-ENG42-agent_flow");
+}
+
+#[test]
+fn test_branch_rules_can_enforce_explicit_names() {
+    let temp_dir = setup_repo();
+    write_branch_rules_config(
+        temp_dir.path(),
+        r#"require_ticket = true
+ticket_pattern = "^ENG[0-9]+$"
+enforce_explicit_names = true"#,
+    );
+
+    let assert = common::committy_cmd()
+        .current_dir(&temp_dir)
+        .arg("--non-interactive")
+        .arg("branch")
+        .arg("--name")
+        .arg("wildly-nonstandard")
+        .arg("--dry-run")
+        .arg("--output")
+        .arg("json")
+        .assert()
+        .code(1);
+    let payload: Value = serde_json::from_slice(&assert.get_output().stdout).unwrap();
+    assert_eq!(payload["errors"][0]["code"], "invalid_input");
 }
 
 #[test]
