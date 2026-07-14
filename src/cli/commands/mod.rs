@@ -6,6 +6,7 @@ pub mod commit;
 pub mod config;
 pub mod example;
 pub mod group_commit;
+pub mod hooks;
 pub mod info;
 pub mod init;
 pub mod lint;
