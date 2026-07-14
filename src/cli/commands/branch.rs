@@ -93,7 +93,10 @@ impl Command for BranchCommand {
             .workdir()
             .ok_or_else(|| CliError::GitError(git2::Error::from_str("No working directory")))?;
         let convention = Convention::load(repo_path)?;
-        let allowed_types = convention.allowed_branch_types();
+        let mut allowed_types = convention.allowed_branch_types();
+        if allowed_types.is_empty() {
+            allowed_types = Convention::from_config(Default::default())?.allowed_branch_types();
+        }
         let merged = MergedConfig::load(repo_path).map_err(|e| CliError::Generic(e.to_string()))?;
         let rules = merged
             .repository_config()

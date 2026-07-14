@@ -93,6 +93,31 @@ strategy = "independent"
     .expect("Failed to write branch rules config");
 }
 
+fn write_legacy_convention_config(dir: &std::path::Path) {
+    fs::create_dir_all(dir.join(".committy")).expect("Failed to create .committy");
+    fs::write(
+        dir.join(".committy/config.toml"),
+        r#"packages = []
+
+[repository]
+name = "agent-repo"
+type = "single-package"
+
+[versioning]
+strategy = "independent"
+
+[convention]
+
+[[convention.types]]
+name = "wip"
+description = "Legacy custom commit type"
+bump = "none"
+changelog_section = "Custom"
+"#,
+    )
+    .expect("Failed to write legacy convention config");
+}
+
 #[test]
 fn test_branch_dry_run_json_outputs_plan() {
     let temp_dir = setup_repo();
@@ -280,6 +305,28 @@ enforce_explicit_names = true"#,
         .code(1);
     let payload: Value = serde_json::from_slice(&assert.get_output().stdout).unwrap();
     assert_eq!(payload["errors"][0]["code"], "invalid_input");
+}
+
+#[test]
+fn test_structured_branch_uses_builtins_for_legacy_commit_only_convention() {
+    let temp_dir = setup_repo();
+    write_legacy_convention_config(temp_dir.path());
+
+    let assert = common::committy_cmd()
+        .current_dir(&temp_dir)
+        .arg("--non-interactive")
+        .arg("branch")
+        .arg("--type")
+        .arg("feat")
+        .arg("--subject")
+        .arg("compatible")
+        .arg("--dry-run")
+        .arg("--output")
+        .arg("json")
+        .assert()
+        .success();
+    let payload: Value = serde_json::from_slice(&assert.get_output().stdout).unwrap();
+    assert_eq!(payload["branch_name"], "feat-compatible");
 }
 
 #[test]

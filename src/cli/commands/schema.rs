@@ -70,6 +70,10 @@ fn capabilities() -> Vec<CapabilityDefinition> {
             description: "Lint one message or repository history",
         },
         CapabilityDefinition {
+            name: "hooks.install",
+            description: "Preview or install native Git hooks and CI enforcement",
+        },
+        CapabilityDefinition {
             name: "hooks.commit-msg",
             description: "Enforce commit messages through a native git hook",
         },
