@@ -82,11 +82,7 @@ impl MergedConfig {
     }
 
     pub fn effective_convention(&self) -> ConventionConfig {
-        let mut config = self
-            .user
-            .convention
-            .clone()
-            .unwrap_or_else(ConventionConfig::default);
+        let mut config = self.user.convention.clone().unwrap_or_default();
 
         if let Some(repository) = &self.repository {
             if let Some(repository_convention) = &repository.convention {

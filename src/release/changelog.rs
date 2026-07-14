@@ -143,7 +143,7 @@ pub fn render_changelog(
             sections.push((name.clone(), entries));
         }
     }
-    sections.extend(grouped.into_iter());
+    sections.extend(grouped);
 
     let template = if let Some(path) = &config.template_path {
         fs::read_to_string(path).map_err(CliError::IoError)?

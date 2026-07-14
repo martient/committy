@@ -327,11 +327,9 @@ impl TagCommand {
         latest_tag: Option<&str>,
         git_command_config: &git::GitCommandConfig,
     ) -> Result<String, CliError> {
-        let range = if latest_tag.is_none() {
-            "HEAD".to_string()
-        } else {
-            format!("{}..HEAD", latest_tag.unwrap())
-        };
+        let range = latest_tag
+            .map(|tag| format!("{tag}..HEAD"))
+            .unwrap_or_else(|| "HEAD".to_string());
 
         // Use git log to get commit messages
         let repo_path = repo
