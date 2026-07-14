@@ -1,0 +1,4 @@
+interface:
+  display_name: "Commit with Committy"
+  short_description: "Preview and create compliant commits"
+  default_prompt: "Use $committy-commit to commit my current change safely."
