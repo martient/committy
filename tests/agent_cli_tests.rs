@@ -194,6 +194,47 @@ fn test_branch_dry_run_json_supports_repo_path_without_chdir() {
 }
 
 #[test]
+fn test_branch_dry_run_json_supports_linked_worktree() {
+    let temp_dir = setup_repo();
+    let worktree_parent = tempdir().expect("Failed to create worktree parent");
+    let worktree_path = worktree_parent.path().join("linked-worktree");
+
+    let output = StdCommand::new("git")
+        .args(["worktree", "add", "--detach"])
+        .arg(&worktree_path)
+        .current_dir(&temp_dir)
+        .output()
+        .expect("Failed to create linked worktree");
+    assert!(
+        output.status.success(),
+        "git worktree add failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let assert = common::committy_cmd()
+        .current_dir(&worktree_path)
+        .arg("--non-interactive")
+        .arg("branch")
+        .arg("--repo-path")
+        .arg(".")
+        .arg("--name")
+        .arg("feat-linked-worktree")
+        .arg("--dry-run")
+        .arg("--output")
+        .arg("json")
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    let payload: Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(payload["ok"], Value::Bool(true));
+    assert_eq!(
+        payload["branch_name"],
+        Value::String("feat-linked-worktree".into())
+    );
+}
+
+#[test]
 fn test_commit_dry_run_json_does_not_create_commit() {
     let temp_dir = setup_repo();
     let file = temp_dir.path().join("tracked.txt");
