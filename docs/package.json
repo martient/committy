@@ -1,17 +1,17 @@
 {
-  "name": "committy-docs",
-  "type": "module",
-  "version": "0.1.0",
-  "scripts": {
-    "dev": "astro dev",
-    "start": "astro dev",
-    "build": "astro build",
-    "preview": "astro preview",
-    "astro": "astro"
-  },
   "dependencies": {
     "@astrojs/starlight": "0.35.2",
     "astro": "5.13.3",
     "sharp": "0.34.3"
-  }
+  },
+  "name": "committy-docs",
+  "scripts": {
+    "astro": "astro",
+    "build": "astro build",
+    "dev": "astro dev",
+    "preview": "astro preview",
+    "start": "astro dev"
+  },
+  "type": "module",
+  "version": "0.1.1"
 }

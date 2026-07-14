@@ -12,11 +12,20 @@ Committy can be embedded directly in system prompts or skills when you want an a
 
 Preferred sequence:
 
-1. Run a `--dry-run --output json` preview.
-2. Inspect the JSON payload.
-3. Rerun without `--dry-run` only if the plan looks correct.
-4. Require explicit confirmation for any remote mutation.
-5. Use `--repo-path` when the agent should operate on a checkout other than its current shell directory.
+1. Query `committy schema --output json` once for active types and capabilities.
+2. Run a `--dry-run --output json` preview.
+3. Inspect the JSON payload.
+4. Rerun without `--dry-run` only if the plan looks correct.
+5. Require explicit confirmation for any remote mutation.
+6. Use `--repo-path` when the agent should operate on another checkout.
+
+## Policy discovery
+
+```bash
+committy schema --repo-path . --output json
+```
+
+The backward-compatible `types` array lists commit types. `type_definitions` adds descriptions, SemVer behavior, aliases, and `commit` or `branch` contexts. `capabilities` describes supported agent operations so skills do not need to hard-code the command surface.
 
 ## Branch recipe
 
@@ -111,6 +120,7 @@ For grouped commits or tags, require explicit confirmation flags before any remo
 
 ## JSON fields to rely on
 
+- `api_version`: machine contract version; currently `1`.
 - `command`: the command that produced the payload.
 - `ok`: whether the command-level operation succeeded.
 - `dry_run`: whether the payload is only a preview.
@@ -118,3 +128,23 @@ For grouped commits or tags, require explicit confirmation flags before any remo
 - `mode`: present on multi-mode commands such as `group-commit`.
 
 Command-specific fields remain stable on top of that envelope.
+
+Command errors exit `1`; convention lint findings exit `3`. JSON mode writes one document to stdout on both success and failure.
+
+## Repository enforcement
+
+Preview native Git hooks plus GitHub Actions enforcement:
+
+```bash
+committy --non-interactive hooks install \
+  --repo-path . \
+  --with-ci \
+  --dry-run \
+  --output json
+```
+
+Remove `--dry-run` to install `commit-msg`, `pre-push`, and `.github/workflows/committy.yml`. Existing files are never replaced unless `--force` is explicit. The hooks are thin delegates to `committy hooks run`, keeping local and CI validation on the same policy engine.
+
+## Codex and Claude skills
+
+The shared plugin lives in `plugins/committy/`. Codex discovers it through `.agents/plugins/marketplace.json`; Claude Code uses `.claude-plugin/marketplace.json`. Both load the same four progressive-disclosure skills for branches, commits, releases, and enforcement, so their small metadata is always available while full instructions load only for matching work.
