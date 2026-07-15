@@ -30,3 +30,16 @@ jobs:
       - name: Smoke test lint-message CLI
         run: |
           cargo run -- --non-interactive lint-message --message "feat: CI smoke test for lint-message"
+
+  windows-check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1.0.7
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - name: Check Windows build
+        run: cargo check

@@ -6,6 +6,7 @@ use crate::linter::{check_message_format_for_repo, CommitIssue, CommitLinter};
 use serde::Serialize;
 use std::fs;
 use std::io::{self, Read};
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use structopt::StructOpt;
@@ -181,6 +182,7 @@ impl HooksInstallCommand {
                     fs::create_dir_all(parent)?;
                 }
                 fs::write(path, contents)?;
+                #[cfg(unix)]
                 if path.starts_with(&hooks_dir) {
                     let mut permissions = fs::metadata(path)?.permissions();
                     permissions.set_mode(permissions.mode() | 0o755);
