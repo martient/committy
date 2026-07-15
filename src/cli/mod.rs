@@ -1,7 +1,8 @@
 pub mod commands;
+pub mod output;
 
 use self::commands::{
-    amend, branch, bump, changelog, commit, config, example, group_commit, info, init, lint,
+    amend, branch, bump, changelog, commit, config, example, group_commit, hooks, info, init, lint,
     lint_message, ls, packages, schema, tag, version,
 };
 use crate::error::CliError;
@@ -9,6 +10,10 @@ use structopt::StructOpt;
 
 pub trait Command {
     fn execute(&self, non_interactive: bool) -> Result<(), CliError>;
+
+    fn machine_context(&self) -> Option<output::MachineContext> {
+        None
+    }
 }
 
 #[derive(StructOpt)]
@@ -41,6 +46,8 @@ pub enum CliCommand {
     Branch(branch::BranchCommand),
     #[structopt(about = "Group changes and optionally commit/apply them (with optional AI)")]
     GroupCommit(group_commit::GroupCommitCommand),
+    #[structopt(about = "Install and run Committy git enforcement hooks")]
+    Hooks(hooks::HooksCommand),
     #[structopt(about = "Initialize multi-package support")]
     Init(init::InitCommand),
     #[structopt(about = "Manage repository configuration")]
@@ -66,9 +73,25 @@ impl CliCommand {
             CliCommand::Version(cmd) => cmd.execute(non_interactive),
             CliCommand::Branch(cmd) => cmd.execute(non_interactive),
             CliCommand::GroupCommit(cmd) => cmd.execute(non_interactive),
+            CliCommand::Hooks(cmd) => cmd.execute(non_interactive),
             CliCommand::Init(cmd) => cmd.execute(non_interactive),
             CliCommand::Config(cmd) => cmd.execute(non_interactive),
             CliCommand::Packages(cmd) => cmd.execute(non_interactive),
+        }
+    }
+
+    pub fn machine_context(&self) -> Option<output::MachineContext> {
+        match self {
+            CliCommand::Commit(cmd) => cmd.machine_context(),
+            CliCommand::Amend(cmd) => cmd.machine_context(),
+            CliCommand::Tag(cmd) => cmd.machine_context(),
+            CliCommand::Lint(cmd) => cmd.machine_context(),
+            CliCommand::LintMessage(cmd) => cmd.machine_context(),
+            CliCommand::Branch(cmd) => cmd.machine_context(),
+            CliCommand::GroupCommit(cmd) => cmd.machine_context(),
+            CliCommand::Hooks(cmd) => cmd.machine_context(),
+            CliCommand::Schema(cmd) => cmd.machine_context(),
+            _ => None,
         }
     }
 }

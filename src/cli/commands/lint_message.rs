@@ -1,3 +1,4 @@
+use crate::cli::output::{MachineContext, API_VERSION};
 use crate::cli::Command;
 use crate::error::CliError;
 use crate::linter::check_message_format_for_repo;
@@ -51,6 +52,7 @@ impl Command for LintMessageCommand {
         if self.output == "json" {
             #[derive(Serialize)]
             struct LintMessageOutput<'a> {
+                api_version: u8,
                 command: &'static str,
                 ok: bool,
                 dry_run: bool,
@@ -59,6 +61,7 @@ impl Command for LintMessageCommand {
                 errors: Option<Vec<String>>,
             }
             let payload = LintMessageOutput {
+                api_version: API_VERSION,
                 command: "lint-message",
                 ok: issues.is_empty(),
                 dry_run: false,
@@ -81,5 +84,12 @@ impl Command for LintMessageCommand {
         } else {
             Err(CliError::LintIssues(issues.len()))
         }
+    }
+
+    fn machine_context(&self) -> Option<MachineContext> {
+        (self.output == "json").then_some(MachineContext {
+            command: "lint-message",
+            dry_run: false,
+        })
     }
 }

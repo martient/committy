@@ -203,10 +203,32 @@ fn test_schema_example_info_ls_and_version_json() {
             .success(),
     );
     assert_eq!(schema["command"], Value::String("schema".into()));
+    assert_eq!(schema["api_version"], Value::from(1));
     assert_eq!(
         schema["convention"],
         Value::String("conventional-commits".into())
     );
+    assert!(schema["types"]
+        .as_array()
+        .unwrap()
+        .contains(&Value::from("feat")));
+    let feat = schema["type_definitions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["name"] == "feat")
+        .unwrap();
+    assert_eq!(feat["description"], "A new feature");
+    assert!(feat["contexts"]
+        .as_array()
+        .unwrap()
+        .contains(&Value::from("branch")));
+    assert!(schema["capabilities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item["name"] == "branch.preview"
+            && item["description"].as_str().unwrap().contains("without")));
 
     let example = parse_stdout(
         common::committy_cmd()

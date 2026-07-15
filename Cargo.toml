@@ -48,6 +48,4 @@ assert_cmd = "2.1.1"
 predicates = "3.1.3"
 tempfile = "3.23.0"
 mockall = "0.13.1"
-once_cell = "1.21.3"
 serial_test = "3.2.0"
-

@@ -71,6 +71,53 @@ allow_multiple_scopes = false
     .expect("Failed to write commit rules config");
 }
 
+fn write_branch_rules_config(dir: &std::path::Path, body: &str) {
+    fs::create_dir_all(dir.join(".committy")).expect("Failed to create .committy");
+    fs::write(
+        dir.join(".committy/config.toml"),
+        format!(
+            r#"packages = []
+
+[repository]
+name = "agent-repo"
+type = "single-package"
+
+[versioning]
+strategy = "independent"
+
+[branch_rules]
+{body}
+"#
+        ),
+    )
+    .expect("Failed to write branch rules config");
+}
+
+fn write_legacy_convention_config(dir: &std::path::Path) {
+    fs::create_dir_all(dir.join(".committy")).expect("Failed to create .committy");
+    fs::write(
+        dir.join(".committy/config.toml"),
+        r#"packages = []
+
+[repository]
+name = "agent-repo"
+type = "single-package"
+
+[versioning]
+strategy = "independent"
+
+[convention]
+
+[[convention.types]]
+name = "wip"
+description = "Legacy custom commit type"
+bump = "none"
+changelog_section = "Custom"
+"#,
+    )
+    .expect("Failed to write legacy convention config");
+}
+
 #[test]
 fn test_branch_dry_run_json_outputs_plan() {
     let temp_dir = setup_repo();
@@ -148,6 +195,141 @@ fn test_branch_structured_dry_run_json_outputs_plan() {
 }
 
 #[test]
+fn test_branch_invalid_type_json_outputs_one_versioned_error_document() {
+    let temp_dir = setup_repo();
+
+    let assert = common::committy_cmd()
+        .current_dir(&temp_dir)
+        .arg("--non-interactive")
+        .arg("branch")
+        .arg("--type")
+        .arg("unknown")
+        .arg("--subject")
+        .arg("agent-flow")
+        .arg("--dry-run")
+        .arg("--output")
+        .arg("json")
+        .assert()
+        .code(1);
+
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    let mut documents = serde_json::Deserializer::from_str(&stdout).into_iter::<Value>();
+    let payload = documents.next().unwrap().unwrap();
+    assert!(
+        documents.next().is_none(),
+        "stdout must contain one JSON document"
+    );
+
+    assert_eq!(payload["api_version"], Value::from(1));
+    assert_eq!(payload["command"], Value::String("branch".into()));
+    assert_eq!(payload["ok"], Value::Bool(false));
+    assert_eq!(payload["dry_run"], Value::Bool(true));
+    assert_eq!(
+        payload["errors"][0]["code"],
+        Value::String("invalid_input".into())
+    );
+    assert!(payload["errors"][0]["message"]
+        .as_str()
+        .unwrap()
+        .contains("Invalid branch type"));
+}
+
+#[test]
+fn test_branch_rules_require_matching_ticket_for_structured_branches() {
+    let temp_dir = setup_repo();
+    write_branch_rules_config(
+        temp_dir.path(),
+        r#"require_ticket = true
+ticket_pattern = "^ENG[0-9]+$""#,
+    );
+
+    let missing = common::committy_cmd()
+        .current_dir(&temp_dir)
+        .arg("--non-interactive")
+        .arg("branch")
+        .arg("--type")
+        .arg("feat")
+        .arg("--subject")
+        .arg("agent-flow")
+        .arg("--dry-run")
+        .arg("--output")
+        .arg("json")
+        .assert()
+        .code(1);
+    let payload: Value = serde_json::from_slice(&missing.get_output().stdout).unwrap();
+    assert_eq!(payload["errors"][0]["code"], "invalid_input");
+    assert!(payload["errors"][0]["message"]
+        .as_str()
+        .unwrap()
+        .contains("ticket is required"));
+
+    let valid = common::committy_cmd()
+        .current_dir(&temp_dir)
+        .arg("--non-interactive")
+        .arg("branch")
+        .arg("--type")
+        .arg("feat")
+        .arg("--ticket")
+        .arg("ENG42")
+        .arg("--subject")
+        .arg("agent-flow")
+        .arg("--dry-run")
+        .arg("--output")
+        .arg("json")
+        .assert()
+        .success();
+    let payload: Value = serde_json::from_slice(&valid.get_output().stdout).unwrap();
+    assert_eq!(payload["branch_name"], "feat-ENG42-agent_flow");
+}
+
+#[test]
+fn test_branch_rules_can_enforce_explicit_names() {
+    let temp_dir = setup_repo();
+    write_branch_rules_config(
+        temp_dir.path(),
+        r#"require_ticket = true
+ticket_pattern = "^ENG[0-9]+$"
+enforce_explicit_names = true"#,
+    );
+
+    let assert = common::committy_cmd()
+        .current_dir(&temp_dir)
+        .arg("--non-interactive")
+        .arg("branch")
+        .arg("--name")
+        .arg("wildly-nonstandard")
+        .arg("--dry-run")
+        .arg("--output")
+        .arg("json")
+        .assert()
+        .code(1);
+    let payload: Value = serde_json::from_slice(&assert.get_output().stdout).unwrap();
+    assert_eq!(payload["errors"][0]["code"], "invalid_input");
+}
+
+#[test]
+fn test_structured_branch_uses_builtins_for_legacy_commit_only_convention() {
+    let temp_dir = setup_repo();
+    write_legacy_convention_config(temp_dir.path());
+
+    let assert = common::committy_cmd()
+        .current_dir(&temp_dir)
+        .arg("--non-interactive")
+        .arg("branch")
+        .arg("--type")
+        .arg("feat")
+        .arg("--subject")
+        .arg("compatible")
+        .arg("--dry-run")
+        .arg("--output")
+        .arg("json")
+        .assert()
+        .success();
+    let payload: Value = serde_json::from_slice(&assert.get_output().stdout).unwrap();
+    assert_eq!(payload["branch_name"], "feat-compatible");
+}
+
+#[test]
 fn test_branch_structured_flags_conflict_with_name() {
     let temp_dir = setup_repo();
 
@@ -194,6 +376,47 @@ fn test_branch_dry_run_json_supports_repo_path_without_chdir() {
 }
 
 #[test]
+fn test_branch_dry_run_json_supports_linked_worktree() {
+    let temp_dir = setup_repo();
+    let worktree_parent = tempdir().expect("Failed to create worktree parent");
+    let worktree_path = worktree_parent.path().join("linked-worktree");
+
+    let output = StdCommand::new("git")
+        .args(["worktree", "add", "--detach"])
+        .arg(&worktree_path)
+        .current_dir(&temp_dir)
+        .output()
+        .expect("Failed to create linked worktree");
+    assert!(
+        output.status.success(),
+        "git worktree add failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let assert = common::committy_cmd()
+        .current_dir(&worktree_path)
+        .arg("--non-interactive")
+        .arg("branch")
+        .arg("--repo-path")
+        .arg(".")
+        .arg("--name")
+        .arg("feat-linked-worktree")
+        .arg("--dry-run")
+        .arg("--output")
+        .arg("json")
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    let payload: Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(payload["ok"], Value::Bool(true));
+    assert_eq!(
+        payload["branch_name"],
+        Value::String("feat-linked-worktree".into())
+    );
+}
+
+#[test]
 fn test_commit_dry_run_json_does_not_create_commit() {
     let temp_dir = setup_repo();
     let file = temp_dir.path().join("tracked.txt");
@@ -228,6 +451,7 @@ fn test_commit_dry_run_json_does_not_create_commit() {
 
     let output = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
     let v: Value = serde_json::from_str(output.trim()).unwrap();
+    assert_eq!(v["api_version"], Value::from(1));
     assert_eq!(v["command"], Value::String("commit".into()));
     assert_eq!(v["ok"], Value::Bool(true));
     assert_eq!(v["dry_run"], Value::Bool(true));
@@ -246,6 +470,79 @@ fn test_commit_dry_run_json_does_not_create_commit() {
         before.stdout, after.stdout,
         "dry-run must not create commits"
     );
+}
+
+#[test]
+fn test_commit_json_reports_no_staged_changes() {
+    let temp_dir = setup_repo();
+
+    let assert = common::committy_cmd()
+        .current_dir(&temp_dir)
+        .arg("--non-interactive")
+        .arg("commit")
+        .arg("--type")
+        .arg("feat")
+        .arg("--message")
+        .arg("agent contract")
+        .arg("--dry-run")
+        .arg("--output")
+        .arg("json")
+        .assert()
+        .code(1);
+
+    let payload: Value = serde_json::from_slice(&assert.get_output().stdout).unwrap();
+    assert_eq!(payload["api_version"], Value::from(1));
+    assert_eq!(payload["command"], "commit");
+    assert_eq!(payload["errors"][0]["code"], "no_staged_changes");
+}
+
+#[test]
+fn test_commit_json_reports_missing_non_interactive_fields() {
+    let temp_dir = setup_repo();
+    fs::write(temp_dir.path().join("tracked.txt"), "changed\n").unwrap();
+    StdCommand::new("git")
+        .args(["add", "tracked.txt"])
+        .current_dir(&temp_dir)
+        .output()
+        .unwrap();
+
+    let assert = common::committy_cmd()
+        .current_dir(&temp_dir)
+        .arg("--non-interactive")
+        .arg("commit")
+        .arg("--dry-run")
+        .arg("--output")
+        .arg("json")
+        .assert()
+        .code(1);
+
+    let payload: Value = serde_json::from_slice(&assert.get_output().stdout).unwrap();
+    assert_eq!(payload["errors"][0]["code"], "invalid_input");
+    assert!(payload["errors"][0]["message"]
+        .as_str()
+        .unwrap()
+        .contains("--type and --message are required"));
+}
+
+#[test]
+fn test_lint_json_reports_invalid_rev_range() {
+    let temp_dir = setup_repo();
+
+    let assert = common::committy_cmd()
+        .current_dir(&temp_dir)
+        .arg("--non-interactive")
+        .arg("lint")
+        .arg("--rev-range")
+        .arg("HEAD")
+        .arg("--output")
+        .arg("json")
+        .assert()
+        .code(1);
+
+    let payload: Value = serde_json::from_slice(&assert.get_output().stdout).unwrap();
+    assert_eq!(payload["api_version"], Value::from(1));
+    assert_eq!(payload["command"], "lint");
+    assert_eq!(payload["errors"][0]["code"], "invalid_input");
 }
 
 #[test]
@@ -369,18 +666,25 @@ bump = "none""#,
 fn test_tag_publish_requires_confirmation() {
     let temp_dir = setup_repo();
 
-    common::committy_cmd()
+    let assert = common::committy_cmd()
         .current_dir(&temp_dir)
         .arg("--non-interactive")
         .arg("tag")
         .arg("--name")
         .arg("v1.2.3")
         .arg("--publish")
+        .arg("--output")
+        .arg("json")
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicates::str::contains(
             "Publishing a tag requires --confirm-publish",
         ));
+
+    let payload: Value = serde_json::from_slice(&assert.get_output().stdout).unwrap();
+    assert_eq!(payload["api_version"], Value::from(1));
+    assert_eq!(payload["command"], "tag");
+    assert_eq!(payload["errors"][0]["code"], "invalid_input");
 
     let tags = StdCommand::new("git")
         .args(["tag", "--list", "v1.2.3"])

@@ -38,6 +38,31 @@ pub enum CliError {
     LintIssues(usize),
 }
 
+impl CliError {
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::GitError(_) => "git_error",
+            Self::IoError(_) => "io_error",
+            Self::InputError(_) => "invalid_input",
+            Self::NoStagedChanges => "no_staged_changes",
+            Self::StagedChanges => "staged_changes_present",
+            Self::GitConfigError(_) => "git_config_error",
+            Self::Generic(_) => "command_error",
+            Self::SemVerError(_) => "semver_error",
+            Self::RegexError(_) => "regex_error",
+            Self::LintIssues(_) => "lint_issues",
+        }
+    }
+
+    pub fn exit_code(&self) -> i32 {
+        if matches!(self, Self::LintIssues(_)) {
+            3
+        } else {
+            1
+        }
+    }
+}
+
 impl From<clap::Error> for CliError {
     fn from(error: clap::Error) -> Self {
         CliError::Generic(error.to_string())

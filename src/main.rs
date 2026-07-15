@@ -85,14 +85,12 @@ fn main() {
     });
 
     if let Err(e) = run(&mut config) {
-        // Map specific errors to exit codes
-        if let Some(CliError::LintIssues(_)) = e.downcast_ref::<CliError>() {
-            eprintln!("{e}");
-            std::process::exit(3);
-        } else {
-            eprintln!("{e}");
-            std::process::exit(1);
-        }
+        eprintln!("{e}");
+        let exit_code = e
+            .downcast_ref::<CliError>()
+            .map(CliError::exit_code)
+            .unwrap_or(1);
+        std::process::exit(exit_code);
     }
 }
 
@@ -224,8 +222,18 @@ fn run(config: &mut Config) -> Result<()> {
         }
     }
 
-    let result = match opt.cmd {
-        Some(cmd) => cmd.execute(non_interactive),
+    let result = match &opt.cmd {
+        Some(cmd) => {
+            let result = cmd.execute(non_interactive);
+            if let Err(error) = &result {
+                if !matches!(error, CliError::LintIssues(_)) {
+                    if let Some(context) = cmd.machine_context() {
+                        cli::output::print_error(context, error);
+                    }
+                }
+            }
+            result
+        }
         None => {
             let cmd = CommitCommand::default_interactive();
             cmd.execute(non_interactive)

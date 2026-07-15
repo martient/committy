@@ -82,11 +82,7 @@ impl MergedConfig {
     }
 
     pub fn effective_convention(&self) -> ConventionConfig {
-        let mut config = self
-            .user
-            .convention
-            .clone()
-            .unwrap_or_else(ConventionConfig::default);
+        let mut config = self.user.convention.clone().unwrap_or_default();
 
         if let Some(repository) = &self.repository {
             if let Some(repository_convention) = &repository.convention {
@@ -159,6 +155,7 @@ fn custom_commit_type_to_convention(
     super::convention::ConventionType {
         name: custom.name.clone(),
         description: custom.description.clone(),
+        contexts: vec![super::convention::ConventionContext::Commit],
         bump: custom.bump.clone(),
         changelog_section: "Custom".to_string(),
         aliases: vec![],
@@ -218,6 +215,7 @@ mod tests {
             dependencies: vec![],
             scopes: Default::default(),
             commit_rules: Default::default(),
+            branch_rules: Default::default(),
             git: Default::default(),
             convention: None,
             release: None,

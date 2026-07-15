@@ -1,0 +1,4 @@
+interface:
+  display_name: "Branch with Committy"
+  short_description: "Preview and create compliant branches"
+  default_prompt: "Use $committy-branch to create a compliant branch for this work."

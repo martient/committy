@@ -299,26 +299,25 @@ impl ReleaseEngine {
             }
         }
 
-        if plan.publish {
-            if Repository::open(&self.repo_path)
+        if plan.publish
+            && Repository::open(&self.repo_path)
                 .map_err(CliError::from)?
                 .find_remote("origin")
                 .is_ok()
-            {
+        {
+            run_git(
+                &self.repo_path,
+                &["push", "origin", "HEAD"],
+                "push release commit",
+                &self.git_command_config,
+            )?;
+            for tag_name in &plan.tag_names {
                 run_git(
                     &self.repo_path,
-                    &["push", "origin", "HEAD"],
-                    "push release commit",
+                    &["push", "origin", &format!("refs/tags/{tag_name}")],
+                    "push release tag",
                     &self.git_command_config,
                 )?;
-                for tag_name in &plan.tag_names {
-                    run_git(
-                        &self.repo_path,
-                        &["push", "origin", &format!("refs/tags/{tag_name}")],
-                        "push release tag",
-                        &self.git_command_config,
-                    )?;
-                }
             }
         }
 

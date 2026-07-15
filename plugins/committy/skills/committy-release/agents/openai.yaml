@@ -1,0 +1,4 @@
+interface:
+  display_name: "Release with Committy"
+  short_description: "Plan and apply compliant releases"
+  default_prompt: "Use $committy-release to preview the next release."

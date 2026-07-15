@@ -1,4 +1,5 @@
 use crate::ai::{AiCommitSuggestion, LlmClient, LlmError, OllamaClient, OpenRouterClient};
+use crate::cli::output::{MachineContext, API_VERSION};
 use crate::cli::Command;
 use crate::error::CliError;
 use crate::git::format_commit_message;
@@ -35,6 +36,7 @@ pub struct PlanGroup {
 
 #[derive(Debug, Serialize)]
 pub struct GroupCommitPlanResult {
+    pub api_version: u8,
     pub command: String,
     pub mode: String,
     pub ok: bool,
@@ -54,6 +56,7 @@ pub struct CommitRecord {
 
 #[derive(Debug, Serialize)]
 pub struct GroupCommitApplyResult {
+    pub api_version: u8,
     pub command: String,
     pub mode: String,
     pub ok: bool,
@@ -508,6 +511,7 @@ impl Command for GroupCommitCommand {
                     .map_err(|e| CliError::Generic(e.to_string()))?;
 
                 let res = GroupCommitPlanResult {
+                    api_version: API_VERSION,
                     command: "group-commit".into(),
                     mode: "plan".into(),
                     ok: errors.is_empty(),
@@ -852,6 +856,7 @@ impl Command for GroupCommitCommand {
 
                 let ok = commits.iter().all(|c| c.ok) && errors.is_empty();
                 let res = GroupCommitApplyResult {
+                    api_version: API_VERSION,
                     command: "group-commit".into(),
                     mode: "apply".into(),
                     ok,
@@ -874,6 +879,13 @@ impl Command for GroupCommitCommand {
             }
             _ => Err(CliError::Generic("invalid mode".into())),
         }
+    }
+
+    fn machine_context(&self) -> Option<MachineContext> {
+        (self.output == "json").then_some(MachineContext {
+            command: "group-commit",
+            dry_run: self.mode == "plan",
+        })
     }
 }
 

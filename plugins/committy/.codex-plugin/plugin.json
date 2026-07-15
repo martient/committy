@@ -1,0 +1,28 @@
+{
+  "name": "committy",
+  "version": "0.1.0",
+  "description": "Token-efficient commit, branch, release, and repository convention workflows backed by the Committy CLI.",
+  "author": {
+    "name": "Arnaud Leherpeur",
+    "email": "arnaud.leherpeur@taultek.com",
+    "url": "https://github.com/martient"
+  },
+  "homepage": "https://github.com/martient/committy",
+  "repository": "https://github.com/martient/committy",
+  "license": "Apache-2.0",
+  "keywords": ["git", "conventional-commits", "branches", "releases", "agents"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Committy",
+    "shortDescription": "Enforce Git conventions with low-token workflows.",
+    "longDescription": "Use Committy's typed JSON schema, dry-run commands, Git hooks, and CI checks for consistent agent-driven commits, branches, and releases.",
+    "developerName": "Arnaud Leherpeur",
+    "category": "Productivity",
+    "capabilities": ["Commit preview", "Branch policy", "Git hooks", "Release planning"],
+    "defaultPrompt": [
+      "Commit this change with Committy.",
+      "Create a compliant branch for this ticket.",
+      "Add Committy enforcement to this repository."
+    ]
+  }
+}

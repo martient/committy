@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use crate::cli::output::{MachineContext, API_VERSION};
 use crate::cli::Command;
 use crate::config::hierarchy::MergedConfig;
 use crate::config::repository::{RepositoryConfig, VersioningStrategy};
@@ -60,6 +61,7 @@ pub struct TagCommand {
 
 #[derive(Debug, Serialize)]
 struct TagCommandOutput {
+    api_version: u8,
     command: String,
     ok: bool,
     dry_run: bool,
@@ -123,6 +125,7 @@ impl Command for TagCommand {
             );
             version_manager.create_and_push_tag(&version_manager.open_repository()?, name)?;
             let payload = TagCommandOutput {
+                api_version: API_VERSION,
                 command: "tag".into(),
                 ok: true,
                 dry_run: self.tag_options.dry_run(),
@@ -156,6 +159,7 @@ impl Command for TagCommand {
 
             // Print the calculated tag so callers/tests can consume it
             let payload = TagCommandOutput {
+                api_version: API_VERSION,
                 command: "tag".into(),
                 ok: true,
                 dry_run: self.tag_options.dry_run(),
@@ -187,6 +191,7 @@ impl Command for TagCommand {
             );
             version_manager.run()?;
             let payload = TagCommandOutput {
+                api_version: API_VERSION,
                 command: "tag".into(),
                 ok: true,
                 dry_run: self.tag_options.dry_run(),
@@ -222,6 +227,13 @@ impl Command for TagCommand {
         }
 
         Ok(())
+    }
+
+    fn machine_context(&self) -> Option<MachineContext> {
+        (self.output == "json").then_some(MachineContext {
+            command: "tag",
+            dry_run: self.tag_options.dry_run(),
+        })
     }
 }
 
@@ -315,11 +327,9 @@ impl TagCommand {
         latest_tag: Option<&str>,
         git_command_config: &git::GitCommandConfig,
     ) -> Result<String, CliError> {
-        let range = if latest_tag.is_none() {
-            "HEAD".to_string()
-        } else {
-            format!("{}..HEAD", latest_tag.unwrap())
-        };
+        let range = latest_tag
+            .map(|tag| format!("{tag}..HEAD"))
+            .unwrap_or_else(|| "HEAD".to_string());
 
         // Use git log to get commit messages
         let repo_path = repo
@@ -784,6 +794,7 @@ mod tests {
                 ],
             },
             commit_rules: Default::default(),
+            branch_rules: Default::default(),
             git: Default::default(),
             convention: None,
             release: None,

@@ -1,4 +1,5 @@
 use crate::cli::commands::commit::CommitCommand;
+use crate::cli::output::MachineContext;
 use crate::cli::Command;
 use crate::error::CliError;
 use std::path::PathBuf;
@@ -61,6 +62,13 @@ impl Command for AmendCommand {
         };
 
         commit.execute_with_command_name(non_interactive, "amend")
+    }
+
+    fn machine_context(&self) -> Option<MachineContext> {
+        (self.output == "json").then_some(MachineContext {
+            command: "amend",
+            dry_run: self.dry_run,
+        })
     }
 }
 
