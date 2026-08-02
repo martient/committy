@@ -6,6 +6,7 @@ use crate::linter::{check_message_format_for_repo, CommitIssue, CommitLinter};
 use serde::Serialize;
 use std::fs;
 use std::io::{self, Read};
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use structopt::StructOpt;
@@ -182,9 +183,7 @@ impl HooksInstallCommand {
                 }
                 fs::write(path, contents)?;
                 if path.starts_with(&hooks_dir) {
-                    let mut permissions = fs::metadata(path)?.permissions();
-                    permissions.set_mode(permissions.mode() | 0o755);
-                    fs::set_permissions(path, permissions)?;
+                    set_hook_executable(path)?;
                 }
             }
         }
@@ -207,6 +206,19 @@ impl HooksInstallCommand {
         }
         Ok(())
     }
+}
+
+#[cfg(unix)]
+fn set_hook_executable(path: &Path) -> Result<(), CliError> {
+    let mut permissions = fs::metadata(path)?.permissions();
+    permissions.set_mode(permissions.mode() | 0o755);
+    fs::set_permissions(path, permissions)?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn set_hook_executable(_path: &Path) -> Result<(), CliError> {
+    Ok(())
 }
 
 impl HooksRunCommand {
