@@ -1,6 +1,6 @@
 [package]
 name = "committy"
-version = "1.9.0"
+version = "1.9.1"
 authors = ["Arnaud (Martient) Leherpeur <arnaud.leherpeur@taultek.com>"]
 edition = "2021"
 description = "🚀 Generate clear, concise, and structured commit messages effortlessly"
