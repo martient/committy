@@ -169,9 +169,11 @@ mod tests {
     use crate::config::repository::{
         RepositoryMetadata, RepositoryType, VersioningConfig, VersioningRules, VersioningStrategy,
     };
+    use serial_test::serial;
     use tempfile::TempDir;
 
     #[test]
+    #[serial]
     fn test_merged_config_without_repository() {
         let temp_dir = TempDir::new().unwrap();
         let merged = MergedConfig::load(temp_dir.path()).unwrap();
@@ -181,6 +183,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_regex_fallback_to_user_config() {
         let temp_dir = TempDir::new().unwrap();
         let merged = MergedConfig::load(temp_dir.path()).unwrap();
@@ -192,6 +195,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_repository_config_overrides_user() {
         let temp_dir = TempDir::new().unwrap();
 
