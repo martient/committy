@@ -72,21 +72,21 @@ or maintenance cost · **P2** = polish.
 
 ### 3.1 Defects to fix
 
-**P0-1 — The Ollama provider cannot work as written.**
+**P0-1 — The Ollama provider could not work as written.** ✅ **Fixed.**
 `src/ai/mod.rs:160-205` posts to `/api/chat` without `stream: false`. Ollama
 defaults to `stream: true`, so the response is newline-delimited JSON events, and
 `resp.json::<ResponseBody>()` will fail to deserialize on essentially every call.
 Every `--ai-provider ollama` run therefore ends in `LlmError::Parse` and silently
 falls back to the default message. Fix: send `stream: false`.
 
-**P0-2 — Ollama JSON mode is a no-op.**
+**P0-2 — Ollama JSON mode was a no-op.** ✅ **Fixed.**
 `format` is nested inside `options` (`src/ai/mod.rs:174-196`). Ollama reads
 `format` as a **top-level** request field, so JSON mode has never taken effect.
 Fix: hoist `format` to the request body, and prefer passing the
 `AiCommitSuggestion` JSON Schema rather than the string `"json"` — Ollama has
 supported schema-constrained decoding since 0.5.
 
-**P0-3 — AI in default (safe) mode is given no signal at all.**
+**P0-3 — AI in default (safe) mode was given no signal at all.** ✅ **Fixed.**
 `src/cli/commands/group_commit.rs:400-413`: unless `--ai-allow-sensitive` is set,
 the user prompt contains only the group name and the default type/short, and
 instructs the model to work "without revealing code or filenames". The model is
@@ -96,20 +96,24 @@ real signal by default — path *shapes* (extension histogram, directory prefixe
 add/modify/delete counts, scope mappings from `.committy/config.toml`) — none of
 which is file content. Reserve `--ai-allow-sensitive` for actual diff hunks.
 
-**P0-4 — `--ai` is silently ignored in `--mode apply`.**
-The AI block lives only in the `"plan"` arm (`group_commit.rs:308-507`); the
-`"apply"` arm (`:533+`) rebuilds groups from scratch with no LLM call.
-`docs/src/content/docs/reference/ai-flags.mdx` documents
-`--mode apply ... --ai --ai-provider ollama` as a working example. Either wire
-apply to reuse the planned messages, or reject `--ai` with `--mode apply` and fix
-the doc. Silently dropping a flag is the worst of the three options.
+**P0-4 — WITHDRAWN. This finding was wrong.** ❌
+The original text claimed `--ai` was silently ignored in `--mode apply`. It is
+not: the apply arm has its own AI block (`group_commit.rs:586`) with its own
+`suggest_commit` calls. The error came from reading a `grep` run through
+`awk 'NR>=530'`, whose renumbered output was mistaken for line numbers in the
+plan arm. The documented `--mode apply ... --ai` example always worked.
 
-**P1-5 — `--ai-diff-lines-per-file` is a dead flag.**
+What is real in that area is **duplication**: `plan` and `apply` carried
+byte-identical copies of both the group-building loop and the ~150-line AI
+enrichment block. That duplication is what made the misreading possible. Both
+are now extracted into `build_groups()` and `ai_user_prompt()` and shared. ✅ **Fixed.**
+
+**P1-5 — `--ai-diff-lines-per-file` was a dead flag.** ✅ **Fixed** (removed).
 Declared at `group_commit.rs:143-147` as `_ai_diff_lines_per_file` and never read.
 It is documented in `ai-flags.mdx` and accepted on the command line. Remove it, or
 implement it as part of P0-3.
 
-**P1-6 — `ai-flags.mdx` overstates what is sent and understates what is not.**
+**P1-6 — `ai-flags.mdx` overstated what is sent.** ✅ **Fixed.**
 It claims `--ai-allow-sensitive` "may include snippets or diff lines from code" —
 no diff is ever sent, in either mode. It also recommends
 `--ai-model openrouter/anthropic/claude-3.5-sonnet`, a model generation that is two
@@ -250,14 +254,13 @@ steal both shorts. A test pins that trade-off.
 0. ~~**P1-7**, **E-1**, **E-2**, **E-3**~~ — done: capabilities expanded with
    consent metadata, global flag placement, `invalid_usage` envelope, env var
    documented. See §3.5.
-1. **P0-1, P0-2** — make Ollama actually function.
-2. **P0-4, P1-5, P1-6, §3.3 removals** — stop documenting and accepting things
-   that do not happen.
-3. **P0-3** — give the default-safe AI path real, non-sensitive signal.
-4. **P1-8, P1-9, P1-10** — cross-tool portability (`AGENTS.md` canonical,
+1. ~~**P0-1, P0-2, P0-3**, **P1-5**, **P1-6**~~ — done: Ollama functions,
+   the safe AI path carries redacted shape, dead flag and docs corrected.
+   **P0-4 was withdrawn as a false finding.**
+2. **P1-8, P1-9, P1-10** — cross-tool portability (`AGENTS.md` canonical,
    `.agents/skills/`, spec-complete frontmatter).
-5. **P1-12** — manifest and frontmatter tests so the step above cannot regress.
-6. **P1-11, P2-13, P2-14, P2-15** — reach, CI cost, consistency, guardrail honesty.
+3. **P1-12** — manifest and frontmatter tests so the step above cannot regress.
+4. **P1-11, P2-13, P2-14, P2-15** — reach, CI cost, consistency, guardrail honesty.
 
 ## 5. Sources
 

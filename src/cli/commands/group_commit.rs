@@ -142,10 +142,6 @@ pub struct GroupCommitCommand {
     #[structopt(long = "ai-file-limit", default_value = "20")]
     ai_file_limit: usize,
 
-    /// Diff lines per file sent to AI
-    #[structopt(long = "ai-diff-lines-per-file", default_value = "80")]
-    _ai_diff_lines_per_file: usize,
-
     /// Allow sending sensitive content to external AI providers
     #[structopt(long = "ai-allow-sensitive")]
     ai_allow_sensitive: bool,
@@ -181,7 +177,6 @@ impl Default for GroupCommitCommand {
             ai_system_prompt: None,
             ai_system_prompt_file: None,
             ai_file_limit: 20,
-            _ai_diff_lines_per_file: 80,
             ai_allow_sensitive: false,
             git_config: vec![],
             repo_path: PathBuf::from("."),
@@ -318,41 +313,7 @@ impl Command for GroupCommitCommand {
                 })?;
                 let _git_command_config =
                     crate::git::resolve_git_command_config(repo_path, &self.git_config)?;
-                let mut by_group: std::collections::BTreeMap<GroupName, Vec<String>> = [
-                    (GroupName::Docs, vec![]),
-                    (GroupName::Tests, vec![]),
-                    (GroupName::Ci, vec![]),
-                    (GroupName::Deps, vec![]),
-                    (GroupName::Build, vec![]),
-                    (GroupName::Chore, vec![]),
-                    (GroupName::Code, vec![]),
-                ]
-                .into_iter()
-                .collect();
-
-                for f in files {
-                    let g = classify_file(&f);
-                    if let Some(v) = by_group.get_mut(&g) {
-                        v.push(f);
-                    }
-                }
-
-                let mut groups: Vec<PlanGroup> = Vec::new();
-                for (name, files) in by_group.into_iter() {
-                    if files.is_empty() {
-                        continue;
-                    }
-                    let commit_type = default_type_for(&name).to_string();
-                    let short = default_short_for(&name).to_string();
-                    let message = format_commit_message(&commit_type, false, "", &short, "");
-                    groups.push(PlanGroup {
-                        name,
-                        commit_type,
-                        files,
-                        suggested_message: message,
-                        issues: None,
-                    });
-                }
+                let mut groups = build_groups(files);
 
                 let mut errors: Vec<String> = Vec::new();
 
@@ -383,38 +344,14 @@ impl Command for GroupCommitCommand {
                         .map_err(|e| CliError::Generic(e.to_string()))?;
 
                     for g in groups.iter_mut() {
-                        let files_preview: Vec<String> = if self.ai_allow_sensitive {
-                            let mut v = g
-                                .files
-                                .iter()
-                                .take(self.ai_file_limit)
-                                .cloned()
-                                .collect::<Vec<_>>();
-                            if g.files.len() > self.ai_file_limit {
-                                v.push("...".to_string());
-                            }
-                            v
-                        } else {
-                            vec![]
-                        };
-                        let user_prompt = if self.ai_allow_sensitive {
-                            format!(
-                                "Group: {}\nDefault type: {}\nDefault short: {}\nFiles (truncated):\n- {}\nReturn a JSON object with fields: commit_type, short, scope, long, message.",
-                                group_name_str(g.name),
-                                g.commit_type,
-                                default_short_for(&g.name),
-                                files_preview.join("\n- ")
-                            )
-                        } else {
-                            format!(
-                                "Group: {}\nDefault type: {}\nDefault short: {}\nWithout revealing code or filenames, suggest a better short description if needed. Return JSON.",
-                                group_name_str(g.name),
-                                g.commit_type,
-                                default_short_for(&g.name)
-                            )
-                        };
+                        let user_prompt = ai_user_prompt(
+                            &g.name,
+                            &g.commit_type,
+                            &g.files,
+                            self.ai_allow_sensitive,
+                            self.ai_file_limit,
+                        );
 
-                        // Prepare client per provider
                         let result: Result<String, LlmError> = match provider {
                             "openrouter" => {
                                 let base = self
@@ -544,41 +481,7 @@ impl Command for GroupCommitCommand {
                     crate::git::resolve_git_command_config(repo_path, &self.git_config)?;
                 // Build groups as in plan
                 let files = list_changed_files_from(&self.repo_path, self.include_unstaged)?;
-                let mut by_group: std::collections::BTreeMap<GroupName, Vec<String>> = [
-                    (GroupName::Docs, vec![]),
-                    (GroupName::Tests, vec![]),
-                    (GroupName::Ci, vec![]),
-                    (GroupName::Deps, vec![]),
-                    (GroupName::Build, vec![]),
-                    (GroupName::Chore, vec![]),
-                    (GroupName::Code, vec![]),
-                ]
-                .into_iter()
-                .collect();
-
-                for f in files {
-                    let g = classify_file(&f);
-                    if let Some(v) = by_group.get_mut(&g) {
-                        v.push(f);
-                    }
-                }
-
-                let mut groups: Vec<PlanGroup> = Vec::new();
-                for (name, files) in by_group.into_iter() {
-                    if files.is_empty() {
-                        continue;
-                    }
-                    let commit_type = default_type_for(&name).to_string();
-                    let short = default_short_for(&name).to_string();
-                    let message = format_commit_message(&commit_type, false, "", &short, "");
-                    groups.push(PlanGroup {
-                        name,
-                        commit_type,
-                        files,
-                        suggested_message: message,
-                        issues: None,
-                    });
-                }
+                let mut groups = build_groups(files);
 
                 let mut errors: Vec<String> = Vec::new();
 
@@ -608,32 +511,13 @@ impl Command for GroupCommitCommand {
                         .map_err(|e| CliError::Generic(e.to_string()))?;
 
                     for g in groups.iter_mut() {
-                        let files_preview: Vec<String> = if self.ai_allow_sensitive {
-                            let mut v = g
-                                .files
-                                .iter()
-                                .take(self.ai_file_limit)
-                                .cloned()
-                                .collect::<Vec<_>>();
-                            if g.files.len() > self.ai_file_limit {
-                                v.push("...".to_string());
-                            }
-                            v
-                        } else {
-                            vec![]
-                        };
-
-                        let user_prompt = if self.ai_allow_sensitive {
-                            format!(
-                                "Group: {}\nDefault type: {}\nDefault short: {}\nFiles (truncated):\n- {}\nReturn a JSON object with fields: commit_type, short, scope, long, message.",
-                                group_name_str(g.name), g.commit_type, default_short_for(&g.name), files_preview.join("\n- ")
-                            )
-                        } else {
-                            format!(
-                                "Group: {}\nDefault type: {}\nDefault short: {}\nWithout revealing code or filenames, suggest a better short description if needed. Return JSON.",
-                                group_name_str(g.name), g.commit_type, default_short_for(&g.name)
-                            )
-                        };
+                        let user_prompt = ai_user_prompt(
+                            &g.name,
+                            &g.commit_type,
+                            &g.files,
+                            self.ai_allow_sensitive,
+                            self.ai_file_limit,
+                        );
 
                         let result: Result<String, LlmError> = match provider {
                             "openrouter" => {
@@ -889,6 +773,129 @@ impl Command for GroupCommitCommand {
     }
 }
 
+/// Summarise a change set without naming any file.
+///
+/// The default (non-sensitive) AI path used to send only the group name, which
+/// gave the model nothing to improve on. This sends *shape* — how many files,
+/// which extensions, which top-level areas — and never a filename, a path
+/// below the first segment, or any file content.
+fn redacted_shape_summary(files: &[String]) -> String {
+    use std::collections::BTreeMap;
+
+    let mut extensions: BTreeMap<String, usize> = BTreeMap::new();
+    let mut areas: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+
+    for file in files {
+        let trimmed = file.trim_start_matches("./");
+        let extension = std::path::Path::new(trimmed)
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| format!(".{e}"))
+            .unwrap_or_else(|| "(no extension)".to_string());
+        *extensions.entry(extension).or_insert(0) += 1;
+
+        // First path segment only: "src", "docs", "tests". Anything deeper can
+        // carry product or customer names.
+        let area = trimmed
+            .split('/')
+            .next()
+            .filter(|segment| !segment.is_empty() && trimmed.contains('/'))
+            .unwrap_or("(repository root)");
+        areas.insert(area.to_string());
+    }
+
+    let extension_list = extensions
+        .iter()
+        .map(|(extension, count)| format!("{extension} x{count}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    format!(
+        "{} file(s); types: {}; areas: {}",
+        files.len(),
+        extension_list,
+        areas.into_iter().collect::<Vec<_>>().join(", ")
+    )
+}
+
+/// The per-group user prompt sent to the model.
+///
+/// `allow_sensitive` is the only switch that lets real paths leave the machine.
+fn ai_user_prompt(
+    name: &GroupName,
+    commit_type: &str,
+    files: &[String],
+    allow_sensitive: bool,
+    file_limit: usize,
+) -> String {
+    let header = format!(
+        "Group: {}\nDefault type: {}\nDefault short: {}",
+        group_name_str(*name),
+        commit_type,
+        default_short_for(name)
+    );
+
+    if allow_sensitive {
+        let mut listed: Vec<String> = files.iter().take(file_limit).cloned().collect();
+        if files.len() > file_limit {
+            listed.push("...".to_string());
+        }
+        format!(
+            "{header}\nFiles (truncated):\n- {}\nReturn a JSON object with fields: \
+             commit_type, short, scope, long, message.",
+            listed.join("\n- ")
+        )
+    } else {
+        format!(
+            "{header}\nChange shape (no filenames or content): {}\nSuggest a better short \
+             description for this group. Return a JSON object with fields: commit_type, \
+             short, scope, long, message.",
+            redacted_shape_summary(files)
+        )
+    }
+}
+
+/// Classify a change set into commit groups.
+///
+/// Shared by `plan` and `apply`; they previously carried byte-identical copies.
+fn build_groups(files: Vec<String>) -> Vec<PlanGroup> {
+    let mut by_group: std::collections::BTreeMap<GroupName, Vec<String>> = [
+        (GroupName::Docs, vec![]),
+        (GroupName::Tests, vec![]),
+        (GroupName::Ci, vec![]),
+        (GroupName::Deps, vec![]),
+        (GroupName::Build, vec![]),
+        (GroupName::Chore, vec![]),
+        (GroupName::Code, vec![]),
+    ]
+    .into_iter()
+    .collect();
+
+    for file in files {
+        let group = classify_file(&file);
+        if let Some(bucket) = by_group.get_mut(&group) {
+            bucket.push(file);
+        }
+    }
+
+    by_group
+        .into_iter()
+        .filter(|(_, files)| !files.is_empty())
+        .map(|(name, files)| {
+            let commit_type = default_type_for(&name).to_string();
+            let short = default_short_for(&name).to_string();
+            let suggested_message = format_commit_message(&commit_type, false, "", &short, "");
+            PlanGroup {
+                name,
+                commit_type,
+                files,
+                suggested_message,
+                issues: None,
+            }
+        })
+        .collect()
+}
+
 fn validate_group_messages(
     repo_path: &Path,
     groups: &mut [PlanGroup],
@@ -911,4 +918,86 @@ fn validate_group_messages(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn files() -> Vec<String> {
+        vec![
+            "src/cli/commands/secret_feature.rs".to_string(),
+            "src/cli/commands/other.rs".to_string(),
+            "docs/internal/roadmap.md".to_string(),
+        ]
+    }
+
+    #[test]
+    fn shape_summary_describes_without_naming() {
+        let summary = redacted_shape_summary(&files());
+
+        assert!(
+            summary.contains('3'),
+            "must report the file count: {summary}"
+        );
+        assert!(summary.contains(".rs"), "must report extensions: {summary}");
+        assert!(summary.contains(".md"), "must report extensions: {summary}");
+        assert!(
+            summary.contains("src"),
+            "must report top-level areas: {summary}"
+        );
+        assert!(
+            summary.contains("docs"),
+            "must report top-level areas: {summary}"
+        );
+
+        for leaked in ["secret_feature", "other.rs", "roadmap.md", "internal"] {
+            assert!(
+                !summary.contains(leaked),
+                "shape summary leaked `{leaked}`: {summary}"
+            );
+        }
+    }
+
+    #[test]
+    fn default_prompt_carries_shape_but_no_paths() {
+        let prompt = ai_user_prompt(&GroupName::Code, "feat", &files(), false, 20);
+
+        assert!(
+            prompt.contains(&redacted_shape_summary(&files())),
+            "the safe prompt must include the redacted shape: {prompt}"
+        );
+        for leaked in ["secret_feature", "roadmap.md", "src/cli/commands"] {
+            assert!(!prompt.contains(leaked), "safe prompt leaked `{leaked}`");
+        }
+    }
+
+    #[test]
+    fn sensitive_prompt_lists_paths_and_respects_the_limit() {
+        let prompt = ai_user_prompt(&GroupName::Code, "feat", &files(), true, 2);
+
+        assert!(prompt.contains("src/cli/commands/secret_feature.rs"));
+        assert!(
+            prompt.contains("..."),
+            "over-limit file lists must be elided: {prompt}"
+        );
+        assert!(
+            !prompt.contains("docs/internal/roadmap.md"),
+            "third path exceeds the limit of 2"
+        );
+    }
+
+    #[test]
+    fn build_groups_is_shared_between_plan_and_apply() {
+        let groups = build_groups(files());
+
+        let names: Vec<GroupName> = groups.iter().map(|g| g.name).collect();
+        assert!(names.contains(&GroupName::Code));
+        assert!(names.contains(&GroupName::Docs));
+        assert!(
+            groups.iter().all(|g| !g.files.is_empty()),
+            "empty groups must be dropped"
+        );
+        assert!(groups.iter().all(|g| !g.suggested_message.is_empty()));
+    }
 }
