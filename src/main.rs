@@ -56,25 +56,91 @@ struct Opt {
     )]
     pre_release: bool,
 
-    #[structopt(long = "non-interactive", help = "Run in non-interactive mode")]
+    #[structopt(
+        long = "non-interactive",
+        global = true,
+        help = "Run in non-interactive mode"
+    )]
     non_interactive: bool,
 
     #[structopt(long = "metrics-toggle", help = "Toggle metrics collection on/off")]
     metrics_toggle: bool,
 
+    // Not global: `-v` is already taken by `branch --validate` and `--verbose`
+    // by `config validate|show`. Promoting it would silently steal those
+    // shorts. Agents use `-q` and `--non-interactive`, which are global below.
     #[structopt(
         short = "v",
         long = "verbose",
         parse(from_occurrences),
-        help = "Increase verbosity (-v, -vv)"
+        help = "Increase verbosity (-v, -vv); must precede the subcommand"
     )]
     verbose: u8,
 
-    #[structopt(short = "q", long = "quiet", help = "Reduce verbosity (errors only)")]
+    #[structopt(
+        short = "q",
+        long = "quiet",
+        global = true,
+        help = "Reduce verbosity (errors only)"
+    )]
     quiet: bool,
 }
 
+/// Subcommand names as they appear on the command line.
+///
+/// Used only to attribute an argv rejection to a command, since clap gives us
+/// no parsed value in that case.
+const SUBCOMMAND_NAMES: &[&str] = &[
+    "commit",
+    "amend",
+    "tag",
+    "bump",
+    "changelog",
+    "lint",
+    "lint-message",
+    "example",
+    "info",
+    "ls",
+    "schema",
+    "version",
+    "branch",
+    "group-commit",
+    "hooks",
+    "init",
+    "config",
+    "packages",
+];
+
+/// Whether the caller asked for machine output, determined from raw argv.
+///
+/// An argv rejection happens before any flag is parsed, so this is the only way
+/// to know whether the caller is an agent expecting one JSON document.
+fn requested_json_output(args: &[String]) -> bool {
+    args.iter().enumerate().any(|(index, arg)| {
+        arg == "--output=json"
+            || (arg == "--output" && args.get(index + 1).map(String::as_str) == Some("json"))
+    })
+}
+
+/// Best-effort command attribution for an argv rejection.
+fn command_from_args(args: &[String]) -> &str {
+    args.iter()
+        .skip(1)
+        .find(|arg| !arg.starts_with('-'))
+        .map(String::as_str)
+        .filter(|candidate| SUBCOMMAND_NAMES.contains(candidate))
+        .unwrap_or("unknown")
+}
+
 fn main() {
+    // Parse argv before touching configuration so a malformed invocation is
+    // rejected without side effects.
+    let args: Vec<String> = std::env::args().collect();
+    let opt = match Opt::from_iter_safe(&args) {
+        Ok(opt) => opt,
+        Err(error) => exit_on_parse_error(error, &args),
+    };
+
     // Load configuration
     let mut config = Config::load().unwrap_or_else(|_| {
         let default_config = Config::default();
@@ -84,7 +150,7 @@ fn main() {
         default_config
     });
 
-    if let Err(e) = run(&mut config) {
+    if let Err(e) = run(&mut config, opt) {
         eprintln!("{e}");
         let exit_code = e
             .downcast_ref::<CliError>()
@@ -94,9 +160,32 @@ fn main() {
     }
 }
 
-fn run(config: &mut Config) -> Result<()> {
-    let opt = Opt::from_args();
+/// Report a clap rejection and terminate.
+///
+/// `--help` and `--version` arrive here as errors too; they are successful
+/// output and keep their plain-text form. A genuine rejection honours
+/// `--output json` so that an agent's parser sees the same envelope it sees for
+/// every other failure, instead of an empty stdout and prose on stderr.
+fn exit_on_parse_error(error: structopt::clap::Error, args: &[String]) -> ! {
+    use structopt::clap::ErrorKind;
 
+    if matches!(
+        error.kind,
+        ErrorKind::HelpDisplayed | ErrorKind::VersionDisplayed
+    ) {
+        println!("{}", error.message);
+        std::process::exit(0);
+    }
+
+    if requested_json_output(args) {
+        cli::output::print_usage_error(command_from_args(args), &error.message);
+    } else {
+        eprintln!("{}", error.message);
+    }
+    std::process::exit(1);
+}
+
+fn run(config: &mut Config, opt: Opt) -> Result<()> {
     // Initialize logger based on verbosity flags
     let mut builder = Builder::from_env(Env::default().default_filter_or("info"));
     let level = if opt.quiet {

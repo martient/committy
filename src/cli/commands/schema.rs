@@ -37,50 +37,117 @@ struct SchemaOutput {
 struct CapabilityDefinition {
     name: &'static str,
     description: &'static str,
+    /// Whether applying this capability changes the repository or a remote.
+    mutating: bool,
+    /// Whether the CLI refuses to proceed without an explicit confirmation
+    /// flag. An agent must never infer this consent from the task alone.
+    requires_confirmation: bool,
+}
+
+/// Read-only capability: previews and validation.
+const fn read_only(name: &'static str, description: &'static str) -> CapabilityDefinition {
+    CapabilityDefinition {
+        name,
+        description,
+        mutating: false,
+        requires_confirmation: false,
+    }
+}
+
+/// Local mutation: changes this checkout, needs no confirmation flag.
+const fn local_write(name: &'static str, description: &'static str) -> CapabilityDefinition {
+    CapabilityDefinition {
+        name,
+        description,
+        mutating: true,
+        requires_confirmation: false,
+    }
+}
+
+/// Remote mutation: gated behind an explicit confirmation flag.
+const fn remote_write(name: &'static str, description: &'static str) -> CapabilityDefinition {
+    CapabilityDefinition {
+        name,
+        description,
+        mutating: true,
+        requires_confirmation: true,
+    }
 }
 
 fn capabilities() -> Vec<CapabilityDefinition> {
     vec![
-        CapabilityDefinition {
-            name: "branch.preview",
-            description: "Resolve and validate a branch without changing git",
-        },
-        CapabilityDefinition {
-            name: "branch.apply",
-            description: "Create a validated branch",
-        },
-        CapabilityDefinition {
-            name: "branch.lint",
-            description: "Validate structured or policy-enforced branch names",
-        },
-        CapabilityDefinition {
-            name: "commit.preview",
-            description: "Resolve and lint a commit without changing git",
-        },
-        CapabilityDefinition {
-            name: "commit.apply",
-            description: "Create a validated conventional commit",
-        },
-        CapabilityDefinition {
-            name: "commit.amend",
-            description: "Preview or apply a validated amend",
-        },
-        CapabilityDefinition {
-            name: "commit.lint",
-            description: "Lint one message or repository history",
-        },
-        CapabilityDefinition {
-            name: "hooks.install",
-            description: "Preview or install native Git hooks and CI enforcement",
-        },
-        CapabilityDefinition {
-            name: "hooks.commit-msg",
-            description: "Enforce commit messages through a native git hook",
-        },
-        CapabilityDefinition {
-            name: "hooks.pre-push",
-            description: "Enforce outgoing commit history through a native git hook",
-        },
+        read_only(
+            "schema.discover",
+            "Report active convention, types, and this capability list",
+        ),
+        read_only(
+            "branch.preview",
+            "Resolve and validate a branch without changing git",
+        ),
+        local_write("branch.apply", "Create a validated branch"),
+        read_only(
+            "branch.lint",
+            "Validate structured or policy-enforced branch names",
+        ),
+        read_only(
+            "commit.preview",
+            "Resolve and lint a commit without changing git",
+        ),
+        local_write("commit.apply", "Create a validated conventional commit"),
+        local_write("commit.amend", "Preview or apply a validated amend"),
+        read_only("commit.lint", "Lint one message or repository history"),
+        read_only(
+            "group-commit.plan",
+            "Group a dirty worktree into coherent commits without changing git",
+        ),
+        local_write(
+            "group-commit.apply",
+            "Create the planned grouped commits; pushing additionally requires confirmation",
+        ),
+        read_only(
+            "bump.preview",
+            "Compute the next version from commit history without writing files",
+        ),
+        local_write(
+            "bump.apply",
+            "Write the computed version to the configured version files",
+        ),
+        read_only(
+            "changelog.preview",
+            "Render a changelog from git history without writing files",
+        ),
+        read_only(
+            "tag.preview",
+            "Compute the next tag and release plan without changing git",
+        ),
+        local_write(
+            "tag.apply",
+            "Create the computed tag in the local repository",
+        ),
+        remote_write(
+            "tag.publish",
+            "Push tags and publish the release; requires an explicit confirmation flag",
+        ),
+        read_only(
+            "config.validate",
+            "Validate repository configuration and report findings",
+        ),
+        read_only(
+            "packages.list",
+            "List configured packages and their resolved versions",
+        ),
+        local_write(
+            "hooks.install",
+            "Preview or install native Git hooks and CI enforcement",
+        ),
+        read_only(
+            "hooks.commit-msg",
+            "Enforce commit messages through a native git hook",
+        ),
+        read_only(
+            "hooks.pre-push",
+            "Enforce outgoing commit history through a native git hook",
+        ),
     ]
 }
 
