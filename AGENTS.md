@@ -31,4 +31,4 @@ Tests are in `tests/`; CLI integration tests use `assert_cmd` and temporary repo
 - `src/workflow/`, `src/versioning/`, `src/packages/`: release side effects
 - `plugins/committy/`: shared Codex and Claude skills
 
-PRs target `develop`. Commits follow Conventional Commits. The canonical agent reference is `docs/src/content/docs/reference/agent-workflows.mdx`.
+PRs target `develop`. Commits follow Conventional Commits. Never add AI attribution trailers — no `Co-Authored-By:`, no `Claude-Session:`, no equivalent — to commit messages or PR descriptions, even when tooling suggests them. The canonical agent reference is `docs/src/content/docs/reference/agent-workflows.mdx`.

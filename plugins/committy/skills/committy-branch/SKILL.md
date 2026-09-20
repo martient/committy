@@ -1,6 +1,11 @@
 ---
 name: committy-branch
 description: Preview, validate, and create repository-compliant Git branches with Committy. Use when an agent is asked to name a branch, start work for a ticket, validate a proposed branch name, or switch to a new branch.
+license: Apache-2.0
+allowed-tools: Bash Read Grep Glob
+metadata:
+  version: "0.1.0"
+  requires-committy: ">=1.9.0"
 ---
 
 # Branch with Committy

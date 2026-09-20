@@ -1,6 +1,11 @@
 ---
 name: committy-enforce
 description: Configure and enforce repository commit and branch conventions with Committy Git hooks and CI. Use when an agent is asked to adopt Committy, define typed convention descriptions or branch ticket rules, install hooks, or add convention checks to GitHub Actions.
+license: Apache-2.0
+allowed-tools: Bash Read Grep Glob Edit Write
+metadata:
+  version: "0.1.0"
+  requires-committy: ">=1.9.0"
 ---
 
 # Enforce with Committy

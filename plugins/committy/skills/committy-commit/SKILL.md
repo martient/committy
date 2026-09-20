@@ -1,6 +1,11 @@
 ---
 name: committy-commit
 description: Draft, lint, preview, and create repository-compliant commits with Committy. Use when an agent is asked to stage a coherent change, write or repair a commit message, amend a commit, or make a conventional commit.
+license: Apache-2.0
+allowed-tools: Bash Read Grep Glob
+metadata:
+  version: "0.1.0"
+  requires-committy: ">=1.9.0"
 ---
 
 # Commit with Committy

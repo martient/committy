@@ -413,19 +413,24 @@ fn test_capabilities_declare_consent_metadata() {
 fn test_agent_docs_mention_the_non_interactive_env_var() {
     let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
 
+    // `AGENTS.md` is canonical. Per-runtime files may either restate the rule
+    // or defer to it; what must never happen is a runtime being told nothing.
     let agent_facing = [
         "AGENTS.md",
         "CLAUDE.md",
+        "GEMINI.md",
+        ".github/copilot-instructions.md",
         "docs/src/content/docs/reference/agent-workflows.mdx",
     ];
 
     for relative in agent_facing {
         let body = fs::read_to_string(repo_root.join(relative))
             .unwrap_or_else(|e| panic!("cannot read {relative}: {e}"));
+        let defers_to_canonical = body.contains("AGENTS.md");
         assert!(
-            body.contains("COMMITTY_NONINTERACTIVE"),
-            "{relative} must document COMMITTY_NONINTERACTIVE; it is the escape hatch \
-             that makes flag placement irrelevant for agents"
+            body.contains("COMMITTY_NONINTERACTIVE") || defers_to_canonical,
+            "{relative} must document COMMITTY_NONINTERACTIVE or point at AGENTS.md; \
+             it is the escape hatch that makes flag placement irrelevant for agents"
         );
 
         // Documenting `-v` as global would be worse than not documenting
@@ -433,6 +438,35 @@ fn test_agent_docs_mention_the_non_interactive_env_var() {
         assert!(
             !body.contains("`--non-interactive`, `-q`, `-v`"),
             "{relative} lists -v among the global flags, but --verbose is root-only"
+        );
+    }
+}
+
+/// The cross-tool skill discovery path must resolve to the real skills.
+///
+/// `.agents/skills` is a symlink. If a checkout materialises it as a plain
+/// file (Windows without developer mode, or `core.symlinks=false`), discovery
+/// silently breaks for every runtime that reads that path.
+#[test]
+fn test_skills_are_discoverable_at_the_cross_tool_path() {
+    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let cross_tool = repo_root.join(".agents/skills");
+
+    assert!(
+        cross_tool.is_dir(),
+        ".agents/skills must resolve to a directory; if this is a plain file, \
+         the symlink did not survive checkout"
+    );
+
+    for skill in [
+        "committy-branch",
+        "committy-commit",
+        "committy-enforce",
+        "committy-release",
+    ] {
+        assert!(
+            cross_tool.join(skill).join("SKILL.md").is_file(),
+            "{skill}/SKILL.md must be reachable via .agents/skills"
         );
     }
 }
