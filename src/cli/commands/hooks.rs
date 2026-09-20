@@ -28,13 +28,21 @@ jobs:
   lint-commits:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
+          # Full history: linting a PR needs both ends of the commit range.
           fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache the Committy build
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: committy-cli
       - name: Install Committy
         run: cargo install committy --locked
       - name: Lint pull request commits
-        run: committy --non-interactive lint --from-ref "${{ github.event.pull_request.base.sha }}" --to-ref "${{ github.sha }}"
+        env:
+          COMMITTY_NONINTERACTIVE: "1"
+        run: committy lint --from-ref "${{ github.event.pull_request.base.sha }}" --to-ref "${{ github.sha }}"
 "#;
 
 #[derive(Debug, StructOpt)]

@@ -7,6 +7,6 @@ jobs:
   native-git-e2e:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Run native git Docker verification
         run: ./scripts/verify_native_git_e2e.sh
