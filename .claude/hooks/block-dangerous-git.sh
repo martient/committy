@@ -24,7 +24,17 @@ fi
 # Drop heredoc bodies, so documentation or test data that names a command is
 # not mistaken for an invocation of it. A heredoc body spans lines, so this
 # keeps the line that opens it and discards everything after.
-SCRUBBED=$(printf '%s' "$COMMAND" | awk '/<</ { print; exit } { print }')
+#
+# Exception: if the heredoc feeds an interpreter, the body IS executed, and
+# dropping it would be a bypass (`bash <<EOF` / `git reset --hard` / `EOF`).
+# In that case scan the whole thing.
+HEREDOC_LINE=$(printf '%s' "$COMMAND" | grep -m1 '<<')
+if [ -n "$HEREDOC_LINE" ] && printf '%s' "$HEREDOC_LINE" |
+  grep -qE '(^|[;&|[:space:]])(bash|sh|zsh|dash|ksh|python3?|perl|ruby|eval|xargs|source)([[:space:]]|$)'; then
+  SCRUBBED="$COMMAND"
+else
+  SCRUBBED=$(printf '%s' "$COMMAND" | awk '/<</ { print; exit } { print }')
+fi
 
 # Only inspect commands that actually invoke git.
 printf '%s' "$SCRUBBED" | grep -qE '(^|[;&|[:space:]])git([[:space:]]|$)' || exit 0
@@ -35,7 +45,11 @@ deny() {
 }
 
 # --force rewrites remote history unconditionally; --force-with-lease is guarded.
-if printf '%s' "$SCRUBBED" | grep -qE 'push([[:space:]]|$).*(--force([[:space:]]|$)|[[:space:]]-f([[:space:]]|$))'; then
+# Checked as two independent conditions rather than one ordered regex: the flag
+# may precede or follow the remote, and `push -f` leaves no space for a pattern
+# that expects one before the flag.
+if printf '%s' "$SCRUBBED" | grep -qE '(^|[;&|[:space:]])push([[:space:]]|$)' &&
+  printf '%s' "$SCRUBBED" | grep -qE '(^|[[:space:]])(--force|-f)([[:space:]]|$)'; then
   printf '%s' "$SCRUBBED" | grep -q -- '--force-with-lease' || deny "an unguarded force-push"
 fi
 
