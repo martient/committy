@@ -21,14 +21,15 @@ against the state of the agent-integration ecosystem as of September 2026.
 | Skills | 4 × `SKILL.md` (branch, commit, release, enforce) | Well-scoped, progressive disclosure, safety rules present |
 | Codex interface shims | 4 × `agents/openai.yaml` | Display metadata only |
 | Machine contract | `src/cli/output.rs` (`api_version = 1`) + per-command payloads | Stable envelope: `api_version`, `command`, `ok`, `dry_run`, `errors` |
-| Capability discovery | `src/cli/commands/schema.rs:42-84` | 10 hard-coded capabilities |
+| Capability discovery | `src/cli/commands/schema.rs` | 21 capabilities with consent metadata (was 10, bare) |
 | Repo enforcement | `src/cli/commands/hooks.rs:14-37` | `commit-msg`, `pre-push`, GitHub Actions template |
 | Local agent guardrail | `.claude/settings.json` + `.claude/hooks/block-dangerous-git.sh` | PreToolUse Bash denylist |
 | LLM integration | `src/ai/mod.rs`, `src/cli/commands/group_commit.rs:98-151, 356-507` | OpenRouter + Ollama, `group-commit` only |
 
-The core architectural bet — **CLI-first with typed JSON, not an MCP server** —
-is the right one and has been validated by the wider ecosystem this year (see §2).
-Nothing below asks you to change that.
+The core architectural bet is **CLI-first with typed JSON**. That still holds,
+but not for the reason an earlier draft gave: see §3.4, where the blanket
+"never build an MCP server" recommendation is withdrawn, and §3.5, where the
+CLI's own agent ergonomics turned out to be the real problem.
 
 ---
 
@@ -51,11 +52,15 @@ Nothing below asks you to change that.
 5. **Claude Code plugins now carry more than skills**: `commands`, `agents`,
    `hooks`, `mcpServers`, `outputStyles`, `lspServers`, auto-discovered from
    standard directories.
-6. **CLI beat MCP on token cost for known-interface tools** (roughly 4–32× cheaper;
-   a naive GitHub MCP server costs ~55k tokens of context before doing anything).
-   The 2026 consensus is hybrid: CLI for tools the model already understands, MCP
-   only where you need auth, statefulness, or governance.
-7. **Ollama structured output moved to JSON-Schema-constrained decoding** via a
+6. **The MCP token argument has a shelf life.** The benchmarks (35× token cost,
+   reliability dropping to 72% on hard tasks, ~55k tokens for a naive GitHub
+   server) measure *eager-loading* MCP, where every tool schema is injected at
+   session start. Progressive disclosure recovers a reported 60–85%.
+7. **The 2026-07-28 MCP spec is the largest revision since launch**: stateless
+   core, sessions gone, Roots/Sampling/Logging deprecated, MCP Apps and Tasks
+   added, progressive discovery and tool search on the roadmap. Recommendations
+   written against the old full-bundle design no longer apply cleanly.
+8. **Ollama structured output moved to JSON-Schema-constrained decoding** via a
    **top-level** `format` field; `/api/chat` still defaults to `stream: true`.
 
 ---
@@ -112,22 +117,21 @@ families out of date. Both should be corrected.
 
 ### 3.2 Compatibility gaps to close
 
-**P1-7 — `capabilities` in `schema` is stale and undersells the CLI.**
-`schema.rs:42-84` advertises 10 capabilities covering branch, commit and hooks
-only. Absent: `release.plan` / `tag.preview` / `tag.apply` / `tag.publish`,
-`changelog.preview`, `bump.preview` / `bump.apply`, `group-commit.plan` /
-`group-commit.apply`, `packages.*`, `config.validate`, `init`. The
-`committy-release` and `committy-enforce` skills already instruct agents to run
-`bump`, `tag`, `changelog` and `config validate` — commands the capability list
-denies exist. `agent-workflows.mdx` promises capabilities exist precisely "so
-skills do not need to hard-code the command surface"; today they must. This is the
-single highest-leverage fix in the report: it is the contract every skill reads
-first.
+**P1-7 — `capabilities` in `schema` was stale and undersold the CLI.** ✅ **Fixed.**
+`schema.rs` advertised 10 capabilities covering branch, commit and hooks only,
+while the `committy-release` and `committy-enforce` skills instructed agents to
+run `bump`, `tag`, `changelog` and `config validate` — commands the capability
+list denied existed. `agent-workflows.mdx` promises capabilities exist precisely
+"so skills do not need to hard-code the command surface"; they had to.
 
-Two sub-improvements while you are in there: give each capability a `mutating:
-bool` and `requires_confirmation: bool` field so an agent can reason about consent
-without pattern-matching command names, and consider deriving the list from the
-command registry so it cannot drift again.
+Now 21 capabilities cover the whole agent surface, and each declares `mutating`
+and `requires_confirmation` so an agent can reason about consent without
+pattern-matching command names (`tag.publish` is the only one gated on an
+explicit confirmation flag). Covered by
+`tests/agent_ergonomics_tests.rs`.
+
+Still open: the list is hand-maintained and can drift again. Deriving it from
+the command registry would close that for good.
 
 **P1-8 — `AGENTS.md` and `CLAUDE.md` are maintained duplicates.**
 The diff is two lines. This will drift. Make `AGENTS.md` canonical and reduce
@@ -196,31 +200,64 @@ hook, which is policy-engine backed.
 | `agents/openai.yaml` × 4 | `plugins/committy/skills/*/agents/` | Candidate only — verify Codex still reads these; if the marketplace entry supplies display metadata, they are redundant per-vendor files on the least portable layer |
 | Empty roadmap page | `docs/src/content/docs/project/roadmap.mdx` | Frontmatter only, no body — publishes an empty page |
 
-### 3.4 Explicitly *not* recommended
+### 3.4 On building an MCP server
 
-- **Do not build a Committy MCP server.** The 2026 evidence is that CLI invocation
-  of a tool with a discoverable, typed interface costs a fraction of the tokens an
-  MCP tool listing does, and Committy has no auth, statefulness or multi-tenancy
-  that would justify the other side of the trade. The `schema` command already
-  does MCP's discovery job at a few hundred tokens. Invest in §3.2's P1-7 instead.
-- **Do not add an LLM path to the single-commit `commit` command.** The calling
-  agent already has the diff in context and writes better messages than a
-  256-token side-channel call. Committy's differentiated value is *validating* the
-  agent's message, not competing with it.
+An earlier revision of this report said flatly "do not build one". That was
+argued against eager-loading MCP, which the protocol has since moved off: the
+2026-07-28 spec makes the core stateless, drops sessions, and puts progressive
+discovery and tool search on the roadmap. The headline benchmarks against MCP —
+35× token cost, reliability falling to 72% on hard tasks — measure the old
+full-bundle design; progressive disclosure reportedly recovers 60–85% of that.
+So the blanket recommendation was wrong and is withdrawn.
+
+What remains true is the ordering. The observed agent struggle traced to three
+mechanical CLI faults (§3.5), not to the CLI *being* a CLI, and all three were
+fixable in an afternoon. An MCP server would have fixed them incidentally, by
+deleting argv from the problem, while adding a server to build, distribute, and
+keep in version lockstep with the binary — and it would not help the Git hook and
+CI path at all, which must stay CLI and is where Committy's actual enforcement
+lives.
+
+Revisit if agents still struggle now that §3.5 is fixed. If built, shape it as
+roughly six stateless tools mapping to capability groups (`policy.discover`,
+`commit.preview`/`apply`, `branch.preview`/`apply`, `lint`) rather than eighteen
+tools mirroring subcommands, and have `policy.discover` serve the existing
+`schema --output json` payload instead of re-describing the surface.
+
+Still not recommended: **an LLM path on the single-commit `commit` command.** The
+calling agent already has the diff in context and writes better messages than a
+256-token side-channel call. Committy's differentiated value is *validating* the
+agent's message, not competing with it.
+
+### 3.5 CLI ergonomics — diagnosed, fixed, and under test
+
+Reproduced against v1.9.1 and now covered by `tests/agent_ergonomics_tests.rs`:
+
+| # | Fault | Fix |
+|---|---|---|
+| E-1 | `--non-interactive`, `-q` were root-only, so `committy schema --non-interactive …` — the form agents write — was rejected by clap | `global = true` on both |
+| E-2 | Argument-parse rejections wrote nothing to stdout and prose to stderr, even with `--output json` | `invalid_usage` envelope on stdout; text mode unchanged |
+| E-3 | `COMMITTY_NONINTERACTIVE=1` makes placement irrelevant but appeared in no agent-facing doc | documented in `AGENTS.md`, `CLAUDE.md`, `agent-workflows.mdx` |
+
+`--verbose` was deliberately left root-only: `-v` is `branch --validate` and
+`--verbose` belongs to `config validate|show`, so promoting it would silently
+steal both shorts. A test pins that trade-off.
 
 ---
 
 ## 4. Suggested order of work
 
-1. **P1-7** — expand and enrich `capabilities` (unblocks every skill; pure win).
-2. **P0-1, P0-2** — make Ollama actually function.
-3. **P0-4, P1-5, P1-6, §3.3 removals** — stop documenting and accepting things
+0. ~~**P1-7**, **E-1**, **E-2**, **E-3**~~ — done: capabilities expanded with
+   consent metadata, global flag placement, `invalid_usage` envelope, env var
+   documented. See §3.5.
+1. **P0-1, P0-2** — make Ollama actually function.
+2. **P0-4, P1-5, P1-6, §3.3 removals** — stop documenting and accepting things
    that do not happen.
-4. **P0-3** — give the default-safe AI path real, non-sensitive signal.
-5. **P1-8, P1-9, P1-10** — cross-tool portability (`AGENTS.md` canonical,
+3. **P0-3** — give the default-safe AI path real, non-sensitive signal.
+4. **P1-8, P1-9, P1-10** — cross-tool portability (`AGENTS.md` canonical,
    `.agents/skills/`, spec-complete frontmatter).
-6. **P1-12** — manifest and frontmatter tests so step 5 cannot regress.
-7. **P1-11, P2-13, P2-14, P2-15** — reach, CI cost, consistency, guardrail honesty.
+5. **P1-12** — manifest and frontmatter tests so the step above cannot regress.
+6. **P1-11, P2-13, P2-14, P2-15** — reach, CI cost, consistency, guardrail honesty.
 
 ## 5. Sources
 
@@ -233,5 +270,9 @@ hook, which is policy-engine backed.
 - [OpenAI's Codex gets plugins](https://thenewstack.io/openais-codex-gets-plugins/)
 - [Ollama structured outputs](https://docs.ollama.com/capabilities/structured-outputs)
 - [Ollama /api/chat reference](https://docs.ollama.com/api/chat)
+- [MCP roadmap: progressive discovery and agent auth](https://www.developersdigest.tech/blog/mcp-roadmap-progressive-discovery-agent-auth)
+- [Progressive tool loading is the new MCP context pattern](https://usewire.io/blog/progressive-tool-loading-mcp-context-pattern/)
+- [MCP context bloat fix 2026: tool search, code mode, progressive disclosure](https://mcp.directory/blog/mcp-context-bloat-fix-2026-tool-search-code-mode-progressive-disclosure)
+- [MCP servers use 35x more tokens than CLI tools](https://www.mindstudio.ai/blog/mcp-servers-35x-more-tokens-cli-tools-reliability-benchmark)
 - [MCP vs CLI for AI agents](https://www.firecrawl.dev/blog/mcp-vs-cli)
 - [CLI vs MCP: should your agent call tools or run commands?](https://blog.mcpservers.org/posts/cli-vs-mcp)
