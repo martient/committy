@@ -34,9 +34,15 @@ pub struct TagCommand {
     #[structopt(
         short = "b",
         long = "bump-files",
-        help = "Want to auto bump the config to the new version (y/N)"
+        help = "Bump version files to the new version (enabled by default)"
     )]
     bump_config_files: bool,
+
+    #[structopt(
+        long = "no-bump-files",
+        help = "Do not touch version files when tagging"
+    )]
+    no_bump_config_files: bool,
 
     #[structopt(flatten)]
     tag_options: git::TagGeneratorOptions,
@@ -80,6 +86,12 @@ impl Command for TagCommand {
             ));
         }
 
+        if self.bump_config_files && self.no_bump_config_files {
+            return Err(CliError::InputError(
+                "Use either --bump-files or --no-bump-files, not both".to_string(),
+            ));
+        }
+
         let default_repo_path = PathBuf::from(".");
         let effective_repo_path = if self.repo_path != default_repo_path {
             self.repo_path.clone()
@@ -120,7 +132,7 @@ impl Command for TagCommand {
             // Explicit tag name provided - use legacy flow
             let version_manager = git::TagGenerator::new(
                 tag_options.clone(),
-                self.bump_config_files,
+                self.should_bump_files(),
                 git_command_config.clone(),
             );
             version_manager.create_and_push_tag(&version_manager.open_repository()?, name)?;
@@ -152,7 +164,7 @@ impl Command for TagCommand {
             // In non-interactive mode, auto-calculate and act based on options
             let mut version_manager = git::TagGenerator::new(
                 tag_options.clone(),
-                self.bump_config_files,
+                self.should_bump_files(),
                 git_command_config.clone(),
             );
             version_manager.run()?;
@@ -186,7 +198,7 @@ impl Command for TagCommand {
             }
             let mut version_manager = git::TagGenerator::new(
                 tag_options,
-                self.bump_config_files,
+                self.should_bump_files(),
                 git_command_config.clone(),
             );
             version_manager.run()?;
@@ -218,7 +230,7 @@ impl Command for TagCommand {
                                 "is_pre_release",
                                 Value::from(version_manager.is_pre_release),
                             ),
-                            ("allow_bump_files", Value::from(self.bump_config_files)),
+                            ("allow_bump_files", Value::from(self.should_bump_files())),
                         ]),
                     ))
             {
@@ -238,6 +250,12 @@ impl Command for TagCommand {
 }
 
 impl TagCommand {
+    /// Version files are bumped unless the caller opts out with `--no-bump-files`.
+    /// `--bump-files` is still accepted so existing scripts keep working.
+    fn should_bump_files(&self) -> bool {
+        !self.no_bump_config_files
+    }
+
     /// Execute multi-package tag operation
     fn execute_multi_package(
         &self,
@@ -298,13 +316,23 @@ impl TagCommand {
             return Ok(());
         }
 
-        // Step 5: Update version files per package
-        if self.bump_config_files {
-            self.apply_version_updates(repo_path, &version_updates)?;
-            info!(
-                "✅ Updated version files for {} package(s)",
-                version_updates.len()
-            );
+        // Step 5: Update version files per package, and commit them so the tag we
+        // create below actually points at the bumped versions.
+        if self.should_bump_files() {
+            let updated_files = self.apply_version_updates(repo_path, &version_updates)?;
+            if !updated_files.is_empty() {
+                info!(
+                    "✅ Updated version files for {} package(s)",
+                    version_updates.len()
+                );
+                self.commit_version_updates(
+                    repo_path,
+                    &updated_files,
+                    &version_updates,
+                    git_command_config,
+                )?;
+                info!("✅ Committed version changes");
+            }
         }
 
         // Step 6: Update dependencies if requested
@@ -488,7 +516,8 @@ impl TagCommand {
         &self,
         repo_path: &Path,
         updates: &[crate::versioning::manager::VersionUpdate],
-    ) -> Result<(), CliError> {
+    ) -> Result<Vec<PathBuf>, CliError> {
+        let mut updated_files = Vec::new();
         for update in updates {
             // Find package config to get version file
             let config = RepositoryConfig::try_load(repo_path)
@@ -516,16 +545,54 @@ impl TagCommand {
 
             let updated = content.replace(&update.old_version, &update.new_version);
 
+            // Nothing to stage or commit when the file already carries the new version.
+            if updated == content {
+                continue;
+            }
+
             fs::write(&version_file, updated)
                 .map_err(|e| CliError::Generic(format!("Failed to write version file: {}", e)))?;
 
-            // Stage the updated file
-            if let Err(e) = git::stage_file(&version_file) {
-                debug!("Failed to stage {}: {}", version_file.display(), e);
-            }
+            updated_files.push(version_file);
         }
 
-        Ok(())
+        Ok(updated_files)
+    }
+
+    /// Stage and commit the bumped version files so the tags created afterwards
+    /// point at a commit that actually contains them.
+    fn commit_version_updates(
+        &self,
+        repo_path: &Path,
+        updated_files: &[PathBuf],
+        updates: &[crate::versioning::manager::VersionUpdate],
+        git_command_config: &git::GitCommandConfig,
+    ) -> Result<(), CliError> {
+        let relative_files: Vec<String> = updated_files
+            .iter()
+            .map(|file| {
+                file.strip_prefix(repo_path)
+                    .unwrap_or(file)
+                    .display()
+                    .to_string()
+            })
+            .collect();
+        let mut add_args = vec!["add", "--"];
+        add_args.extend(relative_files.iter().map(String::as_str));
+        git::run_git(
+            repo_path,
+            &add_args,
+            "stage version updates",
+            git_command_config,
+        )?;
+
+        let summary = updates
+            .iter()
+            .map(|update| format!("{}@{}", update.package_name, update.new_version))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let message = format!("chore: bump version to {summary}");
+        git::commit_changes_in_with_config(repo_path, &message, false, git_command_config)
     }
 
     /// Apply dependency updates to other packages
