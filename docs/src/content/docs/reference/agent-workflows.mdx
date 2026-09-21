@@ -19,6 +19,36 @@ Preferred sequence:
 5. Require explicit confirmation for any remote mutation.
 6. Use `--repo-path` when the agent should operate on another checkout.
 
+## Flag placement
+
+Committy has two flag namespaces, and mixing them up is the most common way an
+agent invocation fails:
+
+- **Global flags** — `--non-interactive` and `-q`/`--quiet` — are accepted on
+  either side of the subcommand.
+- **Everything else** — `--repo-path`, `--output`, `--dry-run`, and every
+  command-specific flag — must follow the subcommand.
+- **`-v`/`--verbose` must precede the subcommand.** It is deliberately not
+  global: `-v` already means `--validate` on `branch`, and `--verbose` is a real
+  flag on `config validate` and `config show`.
+
+The most reliable option is to stop passing `--non-interactive` altogether and
+set the environment variable instead, which makes placement irrelevant:
+
+```bash
+export COMMITTY_NONINTERACTIVE=1
+committy schema --repo-path . --output json
+```
+
+`CI=1` has the same effect, so Committy is already non-interactive on most CI
+runners.
+
+When an invocation is rejected outright — an unknown flag, a misplaced argument
+— Committy still writes one JSON document to stdout if `--output json` was
+requested, with `"code": "invalid_usage"` and clap's explanation as the message.
+Agents can parse the rejection and self-correct rather than falling back to
+scraping stderr.
+
 ## Policy discovery
 
 ```bash

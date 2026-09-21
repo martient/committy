@@ -20,7 +20,7 @@ jobs:
       draft: ${{ steps.release_type.outputs.draft }}
       changelog: ${{ steps.changelog.outputs.changelog }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       
@@ -84,7 +84,7 @@ jobs:
             asset_suffix: macos-arm64
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Get binary name and version
         shell: bash

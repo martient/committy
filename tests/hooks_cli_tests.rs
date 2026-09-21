@@ -69,9 +69,23 @@ fn hooks_install_writes_executable_hooks_and_ci_workflow() {
     assert!(fs::read_to_string(&pre_push)
         .unwrap()
         .contains("hooks run pre-push"));
-    assert!(fs::read_to_string(workflow)
-        .unwrap()
-        .contains("committy --non-interactive lint"));
+    // The workflow must lint the PR range, and must do so without prompting.
+    // Non-interactive mode comes from COMMITTY_NONINTERACTIVE rather than the
+    // flag, which keeps the command immune to flag-placement mistakes.
+    let workflow_body = fs::read_to_string(workflow).unwrap();
+    assert!(
+        workflow_body.contains("committy lint --from-ref"),
+        "workflow must lint the pull request commit range"
+    );
+    assert!(
+        workflow_body.contains("COMMITTY_NONINTERACTIVE")
+            || workflow_body.contains("--non-interactive"),
+        "workflow must run non-interactively"
+    );
+    assert!(
+        workflow_body.contains("fetch-depth: 0"),
+        "linting a range needs full history"
+    );
     assert_ne!(
         fs::metadata(commit_msg).unwrap().permissions().mode() & 0o111,
         0

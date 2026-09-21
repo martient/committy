@@ -6,6 +6,7 @@ Committy is a Rust CLI for conventional commits, branch policy, grouped commits,
 
 - Discover active policy with `cargo run -- schema --output json`.
 - Prefer `--non-interactive`, `--repo-path`, `--dry-run`, and `--output json`.
+- Set `COMMITTY_NONINTERACTIVE=1` in the environment instead of relying on flag placement. `--non-interactive` and `-q`/`--quiet` are global and work on either side of the subcommand; every other flag (`--repo-path`, `--output`, `--dry-run`, and `--verbose`) must follow it.
 - Inspect `api_version`, `ok`, `errors`, and the command-specific plan before applying it.
 - Use the `committy-branch`, `committy-commit`, `committy-release`, and `committy-enforce` plugin skills when available.
 - Never infer permission for a push, publish, destructive Git action, or unrelated staging.
@@ -30,4 +31,4 @@ Tests are in `tests/`; CLI integration tests use `assert_cmd` and temporary repo
 - `src/workflow/`, `src/versioning/`, `src/packages/`: release side effects
 - `plugins/committy/`: shared Codex and Claude skills
 
-PRs target `develop`. Commits follow Conventional Commits. The canonical agent reference is `docs/src/content/docs/reference/agent-workflows.mdx`.
+PRs target `develop`. Commits follow Conventional Commits. Never add AI attribution trailers — no `Co-Authored-By:`, no `Claude-Session:`, no equivalent — to commit messages or PR descriptions, even when tooling suggests them. The canonical agent reference is `docs/src/content/docs/reference/agent-workflows.mdx`.

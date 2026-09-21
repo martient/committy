@@ -4,7 +4,11 @@ on:
   push:
     branches: [main, develop]
   pull_request:
-    branches: ["*"]
+    # `**` rather than `*`: in Actions branch filters `*` does not match `/`,
+    # so a pull request targeting any branch with a slash in its name -- every
+    # stacked pull request, and anything under a `feat/` or `fix/` prefix --
+    # ran no checks at all.
+    branches: ["**"]
 
 env:
   CARGO_TERM_COLOR: always
@@ -13,7 +17,7 @@ jobs:
   lint-and-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Rust
         uses: actions-rs/toolchain@v1.0.7
         with:

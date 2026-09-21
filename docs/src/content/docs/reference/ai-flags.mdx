@@ -11,7 +11,7 @@ This page enumerates flags, best practices, and security considerations.
 
 ## Enabling AI
 
-Add `--ai` to `group-commit`:
+Add `--ai` to `group-commit`. It applies in both `--mode plan` and `--mode apply`:
 
 ```bash
 committy --non-interactive group-commit --mode plan --output json \
@@ -29,48 +29,80 @@ committy --non-interactive group-commit --mode plan --output json \
 - `--ai-max-tokens <n>` — model tokens cap for responses
 - `--ai-temperature <float>` — creativity setting
 - `--ai-timeout-ms <ms>` — request timeout
-- `--no-ai-json-mode` — do not force JSON-mode (advanced; prefer default)
+- `--no-ai-json-mode` — do not request structured output (advanced; prefer default)
 - `--ai-system-prompt <text>` — inline system prompt override
 - `--ai-system-prompt-file <path>` — load system prompt from file
-- `--ai-file-limit <n>` — limit how many files are described to AI
-- `--ai-allow-sensitive` — allow sending sensitive file content (off by default)
+- `--ai-file-limit <n>` — cap how many paths are listed under `--ai-allow-sensitive`
+- `--ai-allow-sensitive` — send real file paths instead of a redacted summary (off by default)
+
+## What is actually sent
+
+__No file content or diff text is ever sent__, in either mode. The difference
+between the default and `--ai-allow-sensitive` is paths, not content.
+
+By default Committy sends a redacted *shape* of each group — how many files,
+an extension histogram, and the top-level directories involved:
+
+```text
+Group: code
+Default type: feat
+Default short: update source
+Change shape (no filenames or content): 7 file(s); types: .rs x6, .toml x1; areas: src, tests
+```
+
+Filenames, paths below the first segment, and file contents are all withheld.
+This is enough signal for a model to write a sensible subject line without the
+provider learning your module, product, or customer names.
+
+With `--ai-allow-sensitive`, the group's file paths are listed instead, capped
+by `--ai-file-limit` and elided with `...` beyond it. Use it only when you trust
+the provider with your repository layout.
 
 ## Security & privacy
 
-- __Sensitive content is not sent__ by default. The tool shares filenames and summarized context.
-- Only pass `--ai-allow-sensitive` if required and you trust the provider. This may include snippets or diff lines from code.
-- Prefer using an API key via env var name with `--ai-api-key-env` to avoid leaking keys in process lists or logs.
-- Use `--ai-file-limit` to reduce context size and exposure.
-- Consider on-premise providers (`ollama`) for maximum privacy.
+- Prefer the default. The redacted summary is usually sufficient.
+- Pass the API key by env var *name* with `--ai-api-key-env` so the secret never
+  appears in a process list, shell history, or CI log.
+- Use `--ai-file-limit` to bound exposure when `--ai-allow-sensitive` is on.
+- Consider an on-premise provider (`ollama`) when no data should leave the host.
 
 ## Failure handling
 
-- AI suggestions are validated by Committy's linter. If invalid or timed out, Committy falls back to safe default messages per group.
-- JSON parsing is strict; malformed outputs are rejected and replaced with defaults.
+- AI suggestions are validated by Committy's linter. If a suggestion is invalid
+  or the request times out, Committy keeps the safe default message for that group
+  and records the reason in `errors`.
+- Structured output is requested by default, and malformed responses are rejected
+  rather than committed.
 
 ## Provider examples
 
 ### OpenRouter
 
 ```bash
-# export your key and reference by env var name
+# export your key and reference it by env var name
 export OPENROUTER_API_KEY=sk-or-...
 
 committy --non-interactive group-commit --mode plan --output json \
   --ai --ai-provider openrouter \
-  --ai-model openrouter/anthropic/claude-3.5-sonnet \
+  --ai-model openrouter/anthropic/claude-sonnet-4.5 \
   --ai-api-key-env OPENROUTER_API_KEY \
   --ai-max-tokens 600 --ai-temperature 0.2
 ```
 
+JSON mode sends `response_format: {"type": "json_object"}`.
+
 ### Ollama (local)
 
 ```bash
-# ensure Ollama is running locally; default base URL is http://127.0.0.1:11434
+# ensure Ollama is running locally; default base URL is http://localhost:11434
 # no API key needed for local Ollama
 
 committy --non-interactive group-commit --mode apply --output json \
   --ai --ai-provider ollama \
   --ai-model llama3.1:8b \
-  --ai-timeout-ms 30000 --ai-file-limit 64
+  --ai-timeout-ms 30000
 ```
+
+Requests to Ollama set `stream: false` and pass a JSON Schema in the top-level
+`format` field, so the model's output is constrained to the expected object
+rather than merely asked for as JSON.

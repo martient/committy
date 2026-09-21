@@ -1,6 +1,11 @@
 ---
 name: committy-release
 description: Plan and apply version bumps, changelogs, tags, and prereleases with Committy. Use when an agent is asked to prepare, preview, tag, or publish a release, or inspect the release impact of commit history.
+license: Apache-2.0
+allowed-tools: Bash Read Grep Glob
+metadata:
+  version: "0.1.0"
+  requires-committy: ">=1.9.0"
 ---
 
 # Release with Committy
@@ -12,4 +17,4 @@ description: Plan and apply version bumps, changelogs, tags, and prereleases wit
 5. Apply only after mutation is authorized. Publishing additionally requires the CLI confirmation flag; never infer remote-mutation consent.
 6. Report resulting versions, tags, and publish state.
 
-Use `$committy-commit` for ordinary commits and `$committy-enforce` for hooks or CI setup.
+Use the `committy-commit` skill for ordinary commits and `committy-enforce` for hooks or CI setup.
