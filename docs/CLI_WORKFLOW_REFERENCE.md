@@ -139,12 +139,14 @@ info = "Team-specific conventional commits."
 [[convention.types]]
 name = "feat"
 description = "A feature"
+contexts = ["commit", "branch"]
 bump = "minor"
 changelog_section = "Features"
 
 [[convention.types]]
 name = "sec"
 description = "A security fix"
+contexts = ["commit", "branch"]
 bump = "patch"
 changelog_section = "Security"
 
@@ -155,3 +157,14 @@ prompt = "Select a change type"
 required = true
 choices = ["feat", "sec", "fix", "docs", "chore"]
 ```
+
+Branch-specific ticket policy stays separate from reusable type metadata:
+
+```toml
+[branch_rules]
+require_ticket = true
+ticket_pattern = "^[A-Z]+[0-9]+$"
+enforce_explicit_names = false
+```
+
+Types without `contexts` remain commit types for backward compatibility. Query the effective typed definitions and described CLI capabilities with `committy schema --output json`.

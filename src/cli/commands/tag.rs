@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use crate::cli::output::{MachineContext, API_VERSION};
 use crate::cli::Command;
 use crate::config::hierarchy::MergedConfig;
 use crate::config::repository::{RepositoryConfig, VersioningStrategy};
@@ -7,6 +8,7 @@ use crate::dependency::updater::DependencyUpdater;
 use crate::error::CliError;
 use crate::git;
 use crate::input;
+use crate::scope::detector::ScopeDetector;
 use crate::telemetry;
 use crate::versioning::hybrid::HybridVersioning;
 use crate::versioning::independent::IndependentVersioning;
@@ -32,9 +34,15 @@ pub struct TagCommand {
     #[structopt(
         short = "b",
         long = "bump-files",
-        help = "Want to auto bump the config to the new version (y/N)"
+        help = "Bump version files to the new version (enabled by default)"
     )]
     bump_config_files: bool,
+
+    #[structopt(
+        long = "no-bump-files",
+        help = "Do not touch version files when tagging"
+    )]
+    no_bump_config_files: bool,
 
     #[structopt(flatten)]
     tag_options: git::TagGeneratorOptions,
@@ -59,6 +67,7 @@ pub struct TagCommand {
 
 #[derive(Debug, Serialize)]
 struct TagCommandOutput {
+    api_version: u8,
     command: String,
     ok: bool,
     dry_run: bool,
@@ -74,6 +83,12 @@ impl Command for TagCommand {
         if self.tag_options.publish_requested() && !self.tag_options.confirm_publish() {
             return Err(CliError::InputError(
                 "Publishing a tag requires --confirm-publish".to_string(),
+            ));
+        }
+
+        if self.bump_config_files && self.no_bump_config_files {
+            return Err(CliError::InputError(
+                "Use either --bump-files or --no-bump-files, not both".to_string(),
             ));
         }
 
@@ -117,11 +132,12 @@ impl Command for TagCommand {
             // Explicit tag name provided - use legacy flow
             let version_manager = git::TagGenerator::new(
                 tag_options.clone(),
-                self.bump_config_files,
+                self.should_bump_files(),
                 git_command_config.clone(),
             );
             version_manager.create_and_push_tag(&version_manager.open_repository()?, name)?;
             let payload = TagCommandOutput {
+                api_version: API_VERSION,
                 command: "tag".into(),
                 ok: true,
                 dry_run: self.tag_options.dry_run(),
@@ -148,13 +164,14 @@ impl Command for TagCommand {
             // In non-interactive mode, auto-calculate and act based on options
             let mut version_manager = git::TagGenerator::new(
                 tag_options.clone(),
-                self.bump_config_files,
+                self.should_bump_files(),
                 git_command_config.clone(),
             );
             version_manager.run()?;
 
             // Print the calculated tag so callers/tests can consume it
             let payload = TagCommandOutput {
+                api_version: API_VERSION,
                 command: "tag".into(),
                 ok: true,
                 dry_run: self.tag_options.dry_run(),
@@ -181,11 +198,12 @@ impl Command for TagCommand {
             }
             let mut version_manager = git::TagGenerator::new(
                 tag_options,
-                self.bump_config_files,
+                self.should_bump_files(),
                 git_command_config.clone(),
             );
             version_manager.run()?;
             let payload = TagCommandOutput {
+                api_version: API_VERSION,
                 command: "tag".into(),
                 ok: true,
                 dry_run: self.tag_options.dry_run(),
@@ -212,7 +230,7 @@ impl Command for TagCommand {
                                 "is_pre_release",
                                 Value::from(version_manager.is_pre_release),
                             ),
-                            ("allow_bump_files", Value::from(self.bump_config_files)),
+                            ("allow_bump_files", Value::from(self.should_bump_files())),
                         ]),
                     ))
             {
@@ -222,9 +240,22 @@ impl Command for TagCommand {
 
         Ok(())
     }
+
+    fn machine_context(&self) -> Option<MachineContext> {
+        (self.output == "json").then_some(MachineContext {
+            command: "tag",
+            dry_run: self.tag_options.dry_run(),
+        })
+    }
 }
 
 impl TagCommand {
+    /// Version files are bumped unless the caller opts out with `--no-bump-files`.
+    /// `--bump-files` is still accepted so existing scripts keep working.
+    fn should_bump_files(&self) -> bool {
+        !self.no_bump_config_files
+    }
+
     /// Execute multi-package tag operation
     fn execute_multi_package(
         &self,
@@ -245,11 +276,17 @@ impl TagCommand {
 
         // Step 1: Get commit log since last tag
         let repo = git::discover_repository_from(repo_path)?;
-        let commit_log = self.get_commit_log_since_last_tag(&repo, git_command_config)?;
+        let latest_tag = self.find_latest_tag(&repo)?;
+        let latest_tag = (!latest_tag.is_empty()).then_some(latest_tag);
+        let commit_log =
+            self.get_commit_log_since_tag(&repo, latest_tag.as_deref(), git_command_config)?;
         debug!("Commit log since last tag:\n{}", commit_log);
 
-        // Step 2: Detect scopes (affected packages) from commit log
-        let affected_packages = self.detect_affected_packages(&commit_log, repo_config)?;
+        // Step 2: Detect affected packages from commit scopes and changed files
+        let changed_files =
+            self.get_changed_files_since_tag(&repo, latest_tag.as_deref(), git_command_config)?;
+        let affected_packages =
+            self.detect_affected_packages(&commit_log, &changed_files, repo_config)?;
         if affected_packages.is_empty() {
             info!("ℹ️ No packages affected by commits. Skipping tag creation.");
             return Ok(());
@@ -269,13 +306,33 @@ impl TagCommand {
             return Ok(());
         }
 
-        // Step 5: Update version files per package
-        if self.bump_config_files {
-            self.apply_version_updates(repo_path, &version_updates)?;
-            info!(
-                "✅ Updated version files for {} package(s)",
-                version_updates.len()
-            );
+        if self.tag_options.dry_run() {
+            for tag_name in planned_multi_package_tags(repo_config, &version_updates) {
+                info!("🧪 Dry run: Tag would be {}", tag_name);
+                if self.output != "json" {
+                    println!("{}", tag_name);
+                }
+            }
+            return Ok(());
+        }
+
+        // Step 5: Update version files per package, and commit them so the tag we
+        // create below actually points at the bumped versions.
+        if self.should_bump_files() {
+            let updated_files = self.apply_version_updates(repo_path, &version_updates)?;
+            if !updated_files.is_empty() {
+                info!(
+                    "✅ Updated version files for {} package(s)",
+                    version_updates.len()
+                );
+                self.commit_version_updates(
+                    repo_path,
+                    &updated_files,
+                    &version_updates,
+                    git_command_config,
+                )?;
+                info!("✅ Committed version changes");
+            }
         }
 
         // Step 6: Update dependencies if requested
@@ -292,18 +349,15 @@ impl TagCommand {
     }
 
     /// Get commit log since last tag
-    fn get_commit_log_since_last_tag(
+    fn get_commit_log_since_tag(
         &self,
         repo: &git2::Repository,
+        latest_tag: Option<&str>,
         git_command_config: &git::GitCommandConfig,
     ) -> Result<String, CliError> {
-        // Try to find the latest tag
-        let latest_tag = self.find_latest_tag(repo)?;
-        let range = if latest_tag.is_empty() {
-            "HEAD".to_string()
-        } else {
-            format!("{}..HEAD", latest_tag)
-        };
+        let range = latest_tag
+            .map(|tag| format!("{tag}..HEAD"))
+            .unwrap_or_else(|| "HEAD".to_string());
 
         // Use git log to get commit messages
         let repo_path = repo
@@ -320,6 +374,41 @@ impl TagCommand {
             .map_err(|e| CliError::Generic(format!("Invalid UTF-8 in commit log: {}", e)))
     }
 
+    fn get_changed_files_since_tag(
+        &self,
+        repo: &git2::Repository,
+        latest_tag: Option<&str>,
+        git_command_config: &git::GitCommandConfig,
+    ) -> Result<Vec<PathBuf>, CliError> {
+        let repo_path = repo
+            .workdir()
+            .ok_or_else(|| CliError::GitError(git2::Error::from_str("No working directory")))?;
+        let output = if let Some(tag) = latest_tag {
+            let range = format!("{tag}..HEAD");
+            git::run_git_capture(
+                repo_path,
+                &["diff", "--name-only", &range],
+                "get changed files",
+                git_command_config,
+            )?
+        } else {
+            git::run_git_capture(
+                repo_path,
+                &["log", "--format=", "--name-only", "HEAD"],
+                "get changed files",
+                git_command_config,
+            )?
+        };
+        let files = String::from_utf8(output.stdout)
+            .map_err(|e| CliError::Generic(format!("Invalid UTF-8 in changed file list: {}", e)))?
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(PathBuf::from)
+            .collect::<Vec<_>>();
+        Ok(files)
+    }
+
     /// Find the latest tag in the repository
     fn find_latest_tag(&self, repo: &git2::Repository) -> Result<String, CliError> {
         let tags = repo.tag_names(None).map_err(CliError::from)?;
@@ -330,25 +419,39 @@ impl TagCommand {
     fn detect_affected_packages(
         &self,
         commit_log: &str,
+        changed_files: &[PathBuf],
         config: &RepositoryConfig,
     ) -> Result<Vec<String>, CliError> {
         let mut packages = std::collections::HashSet::new();
 
-        // Extract scopes from commit messages (pattern: type(scope): message)
-        let scope_regex = Regex::new(r"^[a-z]+\(([^)]+)\):")
+        // Extract scopes from commit headers (pattern: type(scope)!: message)
+        let scope_regex = Regex::new(r"^[a-z0-9-]+\(([^)]+)\)(?:!)?:")
             .map_err(|e| CliError::Generic(format!("Regex error: {}", e)))?;
 
         for line in commit_log.lines() {
             if let Some(caps) = scope_regex.captures(line) {
                 let scope = caps.get(1).map(|m| m.as_str()).unwrap_or("");
-                // Check if scope matches a package
-                if config.packages.iter().any(|p| p.name == scope) {
-                    packages.insert(scope.to_string());
+                for package in resolve_scope_packages(scope, config) {
+                    packages.insert(package);
                 }
             }
         }
 
-        Ok(packages.into_iter().collect())
+        if !changed_files.is_empty() {
+            let detector = ScopeDetector::new(config.clone(), &self.repo_path);
+            let changed_file_scopes = detector.detect_from_files(changed_files).map_err(|e| {
+                CliError::Generic(format!("Failed to detect scopes from files: {e}"))
+            })?;
+            for scope in changed_file_scopes {
+                for package in resolve_scope_packages(&scope, config) {
+                    packages.insert(package);
+                }
+            }
+        }
+
+        let mut packages = packages.into_iter().collect::<Vec<_>>();
+        packages.sort();
+        Ok(packages)
     }
 
     /// Determine version bump type from commit messages
@@ -413,7 +516,8 @@ impl TagCommand {
         &self,
         repo_path: &Path,
         updates: &[crate::versioning::manager::VersionUpdate],
-    ) -> Result<(), CliError> {
+    ) -> Result<Vec<PathBuf>, CliError> {
+        let mut updated_files = Vec::new();
         for update in updates {
             // Find package config to get version file
             let config = RepositoryConfig::try_load(repo_path)
@@ -441,16 +545,54 @@ impl TagCommand {
 
             let updated = content.replace(&update.old_version, &update.new_version);
 
+            // Nothing to stage or commit when the file already carries the new version.
+            if updated == content {
+                continue;
+            }
+
             fs::write(&version_file, updated)
                 .map_err(|e| CliError::Generic(format!("Failed to write version file: {}", e)))?;
 
-            // Stage the updated file
-            if let Err(e) = git::stage_file(&version_file) {
-                debug!("Failed to stage {}: {}", version_file.display(), e);
-            }
+            updated_files.push(version_file);
         }
 
-        Ok(())
+        Ok(updated_files)
+    }
+
+    /// Stage and commit the bumped version files so the tags created afterwards
+    /// point at a commit that actually contains them.
+    fn commit_version_updates(
+        &self,
+        repo_path: &Path,
+        updated_files: &[PathBuf],
+        updates: &[crate::versioning::manager::VersionUpdate],
+        git_command_config: &git::GitCommandConfig,
+    ) -> Result<(), CliError> {
+        let relative_files: Vec<String> = updated_files
+            .iter()
+            .map(|file| {
+                file.strip_prefix(repo_path)
+                    .unwrap_or(file)
+                    .display()
+                    .to_string()
+            })
+            .collect();
+        let mut add_args = vec!["add", "--"];
+        add_args.extend(relative_files.iter().map(String::as_str));
+        git::run_git(
+            repo_path,
+            &add_args,
+            "stage version updates",
+            git_command_config,
+        )?;
+
+        let summary = updates
+            .iter()
+            .map(|update| format!("{}@{}", update.package_name, update.new_version))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let message = format!("chore: bump version to {summary}");
+        git::commit_changes_in_with_config(repo_path, &message, false, git_command_config)
     }
 
     /// Apply dependency updates to other packages
@@ -507,12 +649,20 @@ impl TagCommand {
                     info!("📌 Created unified tag: {}", tag_name);
                 }
             }
-            VersioningStrategy::Independent | VersioningStrategy::Hybrid => {
+            VersioningStrategy::Independent => {
                 // Per-package tags
                 for update in updates {
                     let tag_name = format!("{}-v{}", update.package_name, update.new_version);
                     self.create_and_push_tag(repo, &tag_name, git_command_config)?;
                     info!("📌 Created tag: {}", tag_name);
+                }
+            }
+            VersioningStrategy::Hybrid => {
+                if let Some(tag_name) = hybrid_tag_name(config, updates) {
+                    self.create_and_push_tag(repo, &tag_name, git_command_config)?;
+                    info!("📌 Created hybrid tag: {}", tag_name);
+                } else {
+                    info!("ℹ️ No primary package version change. Skipping tag creation.");
                 }
             }
         }
@@ -568,5 +718,239 @@ impl TagCommand {
             "push tag to remote",
             git_command_config,
         )
+    }
+}
+
+fn resolve_scope_packages(scope_value: &str, config: &RepositoryConfig) -> Vec<String> {
+    let mut packages = std::collections::HashSet::new();
+    let separator = config.scopes.scope_separator.as_str();
+
+    let scopes = if separator.is_empty() {
+        vec![scope_value]
+    } else {
+        scope_value.split(separator).collect::<Vec<_>>()
+    };
+
+    for scope in scopes {
+        let scope = scope.trim();
+        if scope.is_empty() {
+            continue;
+        }
+
+        if config.packages.iter().any(|package| package.name == scope) {
+            packages.insert(scope.to_string());
+        }
+
+        for mapping in config
+            .scopes
+            .mappings
+            .iter()
+            .filter(|mapping| mapping.scope == scope)
+        {
+            if config
+                .packages
+                .iter()
+                .any(|package| package.name == mapping.package)
+            {
+                packages.insert(mapping.package.clone());
+            }
+        }
+    }
+
+    let mut packages = packages.into_iter().collect::<Vec<_>>();
+    packages.sort();
+    packages
+}
+
+fn hybrid_tag_name(
+    config: &RepositoryConfig,
+    updates: &[crate::versioning::manager::VersionUpdate],
+) -> Option<String> {
+    let primary = config.packages.iter().find(|package| package.primary)?;
+    let update = updates
+        .iter()
+        .find(|update| update.package_name == primary.name)?;
+    Some(format!("v{}", update.new_version))
+}
+
+fn planned_multi_package_tags(
+    config: &RepositoryConfig,
+    updates: &[crate::versioning::manager::VersionUpdate],
+) -> Vec<String> {
+    match config.versioning.strategy {
+        VersioningStrategy::Unified => updates
+            .first()
+            .map(|update| vec![format!("v{}", update.new_version)])
+            .unwrap_or_default(),
+        VersioningStrategy::Independent => updates
+            .iter()
+            .map(|update| format!("{}-v{}", update.package_name, update.new_version))
+            .collect(),
+        VersioningStrategy::Hybrid => hybrid_tag_name(config, updates).into_iter().collect(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{hybrid_tag_name, planned_multi_package_tags, resolve_scope_packages, TagCommand};
+    use crate::config::repository::{
+        PackageConfig, RepositoryConfig, RepositoryMetadata, RepositoryType, ScopeConfig,
+        ScopeMapping, VersioningConfig, VersioningStrategy,
+    };
+    use crate::versioning::manager::VersionUpdate;
+    use std::path::PathBuf;
+    use structopt::StructOpt;
+
+    fn create_multi_package_config() -> RepositoryConfig {
+        RepositoryConfig {
+            repository: RepositoryMetadata {
+                name: "workspace".to_string(),
+                repo_type: RepositoryType::MultiPackage,
+                description: None,
+            },
+            versioning: VersioningConfig {
+                strategy: VersioningStrategy::Hybrid,
+                unified_version: None,
+                rules: None,
+            },
+            packages: vec![
+                PackageConfig {
+                    name: "committy-cli".to_string(),
+                    package_type: "rust-cargo".to_string(),
+                    path: ".".to_string(),
+                    version_file: "Cargo.toml".to_string(),
+                    version_field: "package.version".to_string(),
+                    primary: true,
+                    sync_with: None,
+                    independent: false,
+                    workspace_member: false,
+                    description: None,
+                },
+                PackageConfig {
+                    name: "docs".to_string(),
+                    package_type: "node-npm".to_string(),
+                    path: "docs".to_string(),
+                    version_file: "package.json".to_string(),
+                    version_field: "version".to_string(),
+                    primary: false,
+                    sync_with: None,
+                    independent: true,
+                    workspace_member: false,
+                    description: None,
+                },
+            ],
+            dependencies: vec![],
+            scopes: ScopeConfig {
+                auto_detect: true,
+                require_scope_for_multi_package: true,
+                allow_multiple_scopes: true,
+                scope_separator: ",".to_string(),
+                mappings: vec![
+                    ScopeMapping {
+                        pattern: "src/**".to_string(),
+                        scope: "core".to_string(),
+                        package: "committy-cli".to_string(),
+                        description: None,
+                    },
+                    ScopeMapping {
+                        pattern: "docs/**".to_string(),
+                        scope: "docs".to_string(),
+                        package: "docs".to_string(),
+                        description: None,
+                    },
+                ],
+            },
+            commit_rules: Default::default(),
+            branch_rules: Default::default(),
+            git: Default::default(),
+            convention: None,
+            release: None,
+            changelog: None,
+            workspace: None,
+        }
+    }
+
+    #[test]
+    fn resolve_scope_packages_uses_scope_mappings() {
+        let config = create_multi_package_config();
+
+        assert_eq!(
+            resolve_scope_packages("core", &config),
+            vec!["committy-cli"]
+        );
+    }
+
+    #[test]
+    fn detect_affected_packages_accepts_breaking_multi_scope_headers() {
+        let command = TagCommand::from_iter(["tag"]);
+        let config = create_multi_package_config();
+        let packages = command
+            .detect_affected_packages("feat(core, docs)!: release both\n", &[], &config)
+            .unwrap();
+
+        assert_eq!(packages, vec!["committy-cli", "docs"]);
+    }
+
+    #[test]
+    fn detect_affected_packages_falls_back_to_changed_files() {
+        let command = TagCommand::from_iter(["tag"]);
+        let config = create_multi_package_config();
+        let packages = command
+            .detect_affected_packages(
+                "fix: tag mapping\n",
+                &[PathBuf::from("src/cli/commands/tag.rs")],
+                &config,
+            )
+            .unwrap();
+
+        assert_eq!(packages, vec!["committy-cli"]);
+    }
+
+    #[test]
+    fn hybrid_tag_name_uses_primary_package_version() {
+        let config = create_multi_package_config();
+        let tag = hybrid_tag_name(
+            &config,
+            &[
+                VersionUpdate::new(
+                    "committy-cli".to_string(),
+                    "1.0.0".to_string(),
+                    "1.0.1".to_string(),
+                ),
+                VersionUpdate::new("docs".to_string(), "2.0.0".to_string(), "2.0.1".to_string()),
+            ],
+        );
+
+        assert_eq!(tag.as_deref(), Some("v1.0.1"));
+    }
+
+    #[test]
+    fn hybrid_tag_name_skips_when_only_independent_package_changes() {
+        let config = create_multi_package_config();
+        let tag = hybrid_tag_name(
+            &config,
+            &[VersionUpdate::new(
+                "docs".to_string(),
+                "2.0.0".to_string(),
+                "2.0.1".to_string(),
+            )],
+        );
+
+        assert!(tag.is_none());
+    }
+
+    #[test]
+    fn planned_multi_package_tags_uses_hybrid_repo_tag() {
+        let config = create_multi_package_config();
+        let tags = planned_multi_package_tags(
+            &config,
+            &[VersionUpdate::new(
+                "committy-cli".to_string(),
+                "1.0.0".to_string(),
+                "1.0.1".to_string(),
+            )],
+        );
+
+        assert_eq!(tags, vec!["v1.0.1"]);
     }
 }

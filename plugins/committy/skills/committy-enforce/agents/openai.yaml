@@ -1,0 +1,4 @@
+interface:
+  display_name: "Enforce with Committy"
+  short_description: "Install Git and CI convention checks"
+  default_prompt: "Use $committy-enforce to preview convention enforcement for this repository."

@@ -10,9 +10,9 @@ export default defineConfig({
 	integrations: [
 		starlight({
 			title: 'Committy Docs',
-			social: {
-				github: 'https://github.com/martient/committy',
-			},
+			social: [
+				{ icon: 'github', label: 'GitHub', href: 'https://github.com/martient/committy' },
+			],
 			sidebar: [
 				{
 					label: 'Intro',
@@ -23,14 +23,13 @@ export default defineConfig({
 				},
 				{
 					label: 'Reference',
-					autogenerate: { directory: 'reference' },
+					items: [{ autogenerate: { directory: 'reference' } }],
 				},
 				{
 					label: 'Project',
-					autogenerate: { directory: 'project' },
+					items: [{ autogenerate: { directory: 'project' } }],
 				},
 			],
-			
 		}),
 	],
 });

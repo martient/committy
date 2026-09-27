@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::config::convention::{ConventionConfig, ConventionType};
+use crate::config::convention::{ConventionConfig, ConventionContext, ConventionType};
 use crate::config::hierarchy::MergedConfig;
 use crate::config::repository::BumpType;
 use crate::error::CliError;
@@ -75,8 +75,22 @@ impl Convention {
             .collect()
     }
 
-    pub fn allowed_types(&self) -> Vec<String> {
+    pub fn visible_types_for(&self, context: ConventionContext) -> Vec<&ConventionType> {
         self.visible_types()
+            .into_iter()
+            .filter(|item| item.contexts.contains(&context))
+            .collect()
+    }
+
+    pub fn allowed_types(&self) -> Vec<String> {
+        self.visible_types_for(ConventionContext::Commit)
+            .into_iter()
+            .map(|item| item.name.clone())
+            .collect()
+    }
+
+    pub fn allowed_branch_types(&self) -> Vec<String> {
+        self.visible_types_for(ConventionContext::Branch)
             .into_iter()
             .map(|item| item.name.clone())
             .collect()
@@ -240,7 +254,9 @@ impl Convention {
 
     fn type_by_name(&self, commit_type: &str) -> Option<&ConventionType> {
         let canonical = self.canonical_type(commit_type)?;
-        self.config.types.iter().find(|item| item.name == canonical)
+        self.config.types.iter().find(|item| {
+            item.name == canonical && item.contexts.contains(&ConventionContext::Commit)
+        })
     }
 }
 
@@ -278,5 +294,18 @@ mod tests {
         let convention = Convention::from_config(ConventionConfig::default()).unwrap();
         let issues = convention.validate_message("invalid commit");
         assert!(!issues.is_empty());
+    }
+
+    #[test]
+    fn test_branch_only_type_is_not_a_valid_commit_type() {
+        let convention = Convention::from_config(ConventionConfig::default()).unwrap();
+        let issues = convention.validate_message("spike: investigate agent protocol");
+        assert!(issues
+            .iter()
+            .any(|issue| issue.starts_with("Commit type must be one of:")));
+        assert!(convention
+            .allowed_branch_types()
+            .contains(&"spike".to_string()));
+        assert!(!convention.allowed_types().contains(&"spike".to_string()));
     }
 }

@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 
+use crate::cli::output::{MachineContext, API_VERSION};
 use crate::cli::Command;
-use crate::config::BRANCH_TYPES;
+use crate::config::hierarchy::MergedConfig;
+use crate::config::repository::BranchRulesConfig;
+use crate::convention::Convention;
 use crate::error::CliError;
 use crate::git;
 use crate::input;
@@ -46,6 +49,7 @@ pub struct BranchCommand {
 
 #[derive(Debug, Serialize)]
 struct BranchCommandOutput {
+    api_version: u8,
     command: String,
     ok: bool,
     dry_run: bool,
@@ -84,7 +88,22 @@ struct BranchPlan {
 
 impl Command for BranchCommand {
     fn execute(&self, non_interactive: bool) -> Result<(), CliError> {
-        let Some(plan) = self.build_plan(non_interactive)? else {
+        let repo = git::discover_repository_from(&self.repo_path)?;
+        let repo_path = repo
+            .workdir()
+            .ok_or_else(|| CliError::GitError(git2::Error::from_str("No working directory")))?;
+        let convention = Convention::load(repo_path)?;
+        let mut allowed_types = convention.allowed_branch_types();
+        if allowed_types.is_empty() {
+            allowed_types = Convention::from_config(Default::default())?.allowed_branch_types();
+        }
+        let merged = MergedConfig::load(repo_path).map_err(|e| CliError::Generic(e.to_string()))?;
+        let rules = merged
+            .repository_config()
+            .map(|config| config.branch_rules.clone())
+            .unwrap_or_default();
+
+        let Some(plan) = self.build_plan(non_interactive, &allowed_types, &rules)? else {
             return Ok(());
         };
         git::validate_branch_name(&plan.branch_name)?;
@@ -98,6 +117,7 @@ impl Command for BranchCommand {
         }
 
         let output = BranchCommandOutput {
+            api_version: API_VERSION,
             command: "branch".into(),
             ok: errors.is_empty(),
             dry_run: self.dry_run,
@@ -157,10 +177,22 @@ impl Command for BranchCommand {
 
         Ok(())
     }
+
+    fn machine_context(&self) -> Option<MachineContext> {
+        (self.output == "json").then_some(MachineContext {
+            command: "branch",
+            dry_run: self.dry_run,
+        })
+    }
 }
 
 impl BranchCommand {
-    fn build_plan(&self, non_interactive: bool) -> Result<Option<BranchPlan>, CliError> {
+    fn build_plan(
+        &self,
+        non_interactive: bool,
+        allowed_types: &[String],
+        rules: &BranchRulesConfig,
+    ) -> Result<Option<BranchPlan>, CliError> {
         if self.name.is_some()
             && (self.branch_type.is_some() || self.ticket.is_some() || self.subject.is_some())
         {
@@ -171,7 +203,16 @@ impl BranchCommand {
         }
 
         if let Some(name) = &self.name {
-            let (branch_type, ticket, subject) = parse_branch_name(name);
+            let (branch_type, ticket, subject) = parse_branch_name(name, rules)?;
+            if rules.enforce_explicit_names {
+                validate_branch_type(&branch_type, allowed_types)?;
+                validate_ticket(&ticket, rules)?;
+                if subject.is_empty() {
+                    return Err(CliError::InputError(
+                        "Explicit branch name must include a subject".to_string(),
+                    ));
+                }
+            }
             return Ok(Some(BranchPlan {
                 branch_name: name.clone(),
                 branch_type,
@@ -182,7 +223,7 @@ impl BranchCommand {
         }
 
         if self.branch_type.is_some() || self.ticket.is_some() || self.subject.is_some() {
-            return self.build_structured_plan(non_interactive);
+            return self.build_structured_plan(non_interactive, allowed_types, rules);
         }
 
         if non_interactive {
@@ -192,8 +233,9 @@ impl BranchCommand {
             ));
         }
 
-        let branch_type = input::select_branch_type()?;
+        let branch_type = input::select_branch_type_from(allowed_types)?;
         let ticket = input::input_ticket()?;
+        validate_ticket(&ticket, rules)?;
         let subject = input::input_subject()?;
 
         let branch_name = if ticket.is_empty() {
@@ -221,10 +263,15 @@ impl BranchCommand {
         }))
     }
 
-    fn build_structured_plan(&self, non_interactive: bool) -> Result<Option<BranchPlan>, CliError> {
+    fn build_structured_plan(
+        &self,
+        non_interactive: bool,
+        allowed_types: &[String],
+        rules: &BranchRulesConfig,
+    ) -> Result<Option<BranchPlan>, CliError> {
         let branch_type = match &self.branch_type {
-            Some(branch_type) => validate_branch_type(branch_type)?,
-            None if !non_interactive => input::select_branch_type()?,
+            Some(branch_type) => validate_branch_type(branch_type, allowed_types)?,
+            None if !non_interactive => input::select_branch_type_from(allowed_types)?,
             None => {
                 return Err(CliError::InputError(
                     "Branch type is required when using structured branch flags in non-interactive mode"
@@ -238,6 +285,7 @@ impl BranchCommand {
             None if !non_interactive => input::input_ticket()?,
             None => String::new(),
         };
+        validate_ticket(&ticket, rules)?;
 
         let subject = match &self.subject {
             Some(subject) => validate_structured_section(subject, "subject")?,
@@ -298,14 +346,37 @@ fn build_branch_name(branch_type: &str, ticket: &str, subject: &str) -> String {
     }
 }
 
-fn validate_branch_type(branch_type: &str) -> Result<String, CliError> {
-    if BRANCH_TYPES.iter().any(|known| known == &branch_type) {
+fn validate_branch_type(branch_type: &str, allowed_types: &[String]) -> Result<String, CliError> {
+    if allowed_types.iter().any(|known| known == branch_type) {
         Ok(branch_type.to_string())
     } else {
         Err(CliError::InputError(format!(
             "Invalid branch type '{}'. Valid branch types are: {}",
             branch_type,
-            BRANCH_TYPES.join(", ")
+            allowed_types.join(", ")
+        )))
+    }
+}
+
+fn validate_ticket(ticket: &str, rules: &BranchRulesConfig) -> Result<(), CliError> {
+    if ticket.is_empty() {
+        return if rules.require_ticket {
+            Err(CliError::InputError(
+                "A ticket is required by branch_rules".to_string(),
+            ))
+        } else {
+            Ok(())
+        };
+    }
+
+    let pattern = regex::Regex::new(&rules.ticket_pattern)
+        .map_err(|error| CliError::RegexError(error.to_string()))?;
+    if pattern.is_match(ticket) {
+        Ok(())
+    } else {
+        Err(CliError::InputError(format!(
+            "Ticket '{}' does not match branch_rules.ticket_pattern '{}'",
+            ticket, rules.ticket_pattern
         )))
     }
 }
@@ -316,10 +387,24 @@ fn validate_structured_section(value: &str, field_name: &str) -> Result<String, 
     })
 }
 
-fn parse_branch_name(name: &str) -> (String, String, String) {
-    let mut branch_parts = name.splitn(2, '-');
+fn parse_branch_name(
+    name: &str,
+    rules: &BranchRulesConfig,
+) -> Result<(String, String, String), CliError> {
+    let mut branch_parts = name.splitn(3, '-');
     let branch_type = branch_parts.next().unwrap_or("unknown").to_string();
-    let ticket = String::new();
-    let subject = branch_parts.next().unwrap_or("").to_string();
-    (branch_type, ticket, subject)
+    let second = branch_parts.next().unwrap_or("");
+    let third = branch_parts.next();
+    let ticket_pattern = regex::Regex::new(&rules.ticket_pattern)
+        .map_err(|error| CliError::RegexError(error.to_string()))?;
+    let (ticket, subject) = if let Some(subject) = third {
+        if rules.require_ticket || ticket_pattern.is_match(second) {
+            (second.to_string(), subject.to_string())
+        } else {
+            (String::new(), format!("{second}-{subject}"))
+        }
+    } else {
+        (String::new(), second.to_string())
+    };
+    Ok((branch_type, ticket, subject))
 }

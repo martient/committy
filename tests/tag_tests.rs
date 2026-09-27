@@ -266,6 +266,11 @@ fn test_tag_respects_repo_git_overrides_and_cli_can_override_them() {
         dir.path(),
         &[
             "tag.gpgsign=true".to_string(),
+            // Pin the signing format. `gpg.program` is only consulted for
+            // openpgp; a machine with `gpg.format=ssh` in its global config
+            // routes signing to `gpg.ssh.program` instead, the stub below
+            // never runs, and this test silently asserts nothing.
+            "gpg.format=openpgp".to_string(),
             format!("gpg.program={}", failing_gpg.display()),
         ],
     );

@@ -24,10 +24,19 @@ pub struct ConventionConfig {
 pub struct ConventionType {
     pub name: String,
     pub description: String,
+    #[serde(default = "default_type_contexts")]
+    pub contexts: Vec<ConventionContext>,
     pub bump: BumpType,
     pub changelog_section: String,
     pub aliases: Vec<String>,
     pub hidden: bool,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ConventionContext {
+    Commit,
+    Branch,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -84,12 +93,25 @@ impl Default for ConventionType {
         Self {
             name: "chore".to_string(),
             description: "Other changes that do not modify src or test files".to_string(),
+            contexts: default_type_contexts(),
             bump: BumpType::None,
             changelog_section: "Maintenance".to_string(),
             aliases: vec![],
             hidden: false,
         }
     }
+}
+
+fn default_type_contexts() -> Vec<ConventionContext> {
+    vec![ConventionContext::Commit]
+}
+
+fn commit_and_branch_contexts() -> Vec<ConventionContext> {
+    vec![ConventionContext::Commit, ConventionContext::Branch]
+}
+
+fn branch_contexts() -> Vec<ConventionContext> {
+    vec![ConventionContext::Branch]
 }
 
 impl Default for ConventionQuestion {
@@ -173,6 +195,7 @@ pub fn default_types() -> Vec<ConventionType> {
         ConventionType {
             name: "feat".to_string(),
             description: "A new feature".to_string(),
+            contexts: commit_and_branch_contexts(),
             bump: BumpType::Minor,
             changelog_section: "Features".to_string(),
             aliases: vec!["feature".to_string()],
@@ -181,6 +204,7 @@ pub fn default_types() -> Vec<ConventionType> {
         ConventionType {
             name: "fix".to_string(),
             description: "A bug fix".to_string(),
+            contexts: commit_and_branch_contexts(),
             bump: BumpType::Patch,
             changelog_section: "Bug Fixes".to_string(),
             aliases: vec![],
@@ -189,6 +213,7 @@ pub fn default_types() -> Vec<ConventionType> {
         ConventionType {
             name: "docs".to_string(),
             description: "Documentation only changes".to_string(),
+            contexts: commit_and_branch_contexts(),
             bump: BumpType::Patch,
             changelog_section: "Documentation".to_string(),
             aliases: vec![],
@@ -197,6 +222,7 @@ pub fn default_types() -> Vec<ConventionType> {
         ConventionType {
             name: "perf".to_string(),
             description: "A code change that improves performance".to_string(),
+            contexts: commit_and_branch_contexts(),
             bump: BumpType::Patch,
             changelog_section: "Performance".to_string(),
             aliases: vec![],
@@ -205,6 +231,7 @@ pub fn default_types() -> Vec<ConventionType> {
         ConventionType {
             name: "refactor".to_string(),
             description: "A code change that neither fixes a bug nor adds a feature".to_string(),
+            contexts: commit_and_branch_contexts(),
             bump: BumpType::Patch,
             changelog_section: "Refactoring".to_string(),
             aliases: vec![],
@@ -213,6 +240,7 @@ pub fn default_types() -> Vec<ConventionType> {
         ConventionType {
             name: "build".to_string(),
             description: "Changes that affect the build system".to_string(),
+            contexts: default_type_contexts(),
             bump: BumpType::Patch,
             changelog_section: "Build".to_string(),
             aliases: vec![],
@@ -221,6 +249,7 @@ pub fn default_types() -> Vec<ConventionType> {
         ConventionType {
             name: "ci".to_string(),
             description: "CI configuration changes".to_string(),
+            contexts: default_type_contexts(),
             bump: BumpType::Patch,
             changelog_section: "CI".to_string(),
             aliases: vec![],
@@ -229,6 +258,7 @@ pub fn default_types() -> Vec<ConventionType> {
         ConventionType {
             name: "chore".to_string(),
             description: "Other changes that do not modify src or test files".to_string(),
+            contexts: default_type_contexts(),
             bump: BumpType::None,
             changelog_section: "Maintenance".to_string(),
             aliases: vec![],
@@ -237,6 +267,7 @@ pub fn default_types() -> Vec<ConventionType> {
         ConventionType {
             name: "test".to_string(),
             description: "Adding or fixing tests".to_string(),
+            contexts: commit_and_branch_contexts(),
             bump: BumpType::Patch,
             changelog_section: "Tests".to_string(),
             aliases: vec![],
@@ -245,10 +276,28 @@ pub fn default_types() -> Vec<ConventionType> {
         ConventionType {
             name: "style".to_string(),
             description: "Code style changes".to_string(),
+            contexts: default_type_contexts(),
             bump: BumpType::Patch,
             changelog_section: "Style".to_string(),
             aliases: vec![],
             hidden: false,
         },
+        branch_type("security", "Security-focused work"),
+        branch_type("hotfix", "Urgent production fix"),
+        branch_type("release", "Release preparation"),
+        branch_type("spike", "Time-boxed investigation"),
+        branch_type("tooling", "Developer tooling work"),
     ]
+}
+
+fn branch_type(name: &str, description: &str) -> ConventionType {
+    ConventionType {
+        name: name.to_string(),
+        description: description.to_string(),
+        contexts: branch_contexts(),
+        bump: BumpType::None,
+        changelog_section: "Other".to_string(),
+        aliases: vec![],
+        hidden: false,
+    }
 }

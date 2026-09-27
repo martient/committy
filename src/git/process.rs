@@ -173,6 +173,7 @@ mod tests {
             dependencies: vec![],
             scopes: Default::default(),
             commit_rules: Default::default(),
+            branch_rules: Default::default(),
             git: GitConfig {
                 config_overrides: vec!["repo.value=1".to_string(), "shared.value=repo".to_string()],
             },

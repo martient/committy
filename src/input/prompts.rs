@@ -2,8 +2,7 @@ use super::validation::{
     auto_correct_scope, validate_scope, validate_section, validate_short_message,
 };
 use crate::config::{
-    BRANCH_TYPES, COMMIT_TYPES, MAX_SCOPE_NAME_LENGTH, MAX_SHORT_DESCRIPTION_LENGTH,
-    MAX_TICKET_NAME_LENGTH,
+    COMMIT_TYPES, MAX_SCOPE_NAME_LENGTH, MAX_SHORT_DESCRIPTION_LENGTH, MAX_TICKET_NAME_LENGTH,
 };
 use crate::error::CliError;
 use inquire::{Confirm, Select, Text};
@@ -42,13 +41,13 @@ pub fn select_commit_type_from(types: &[String]) -> Result<String, CliError> {
     Ok(commit_type.to_string())
 }
 
-pub fn select_branch_type() -> Result<String, CliError> {
+pub fn select_branch_type_from(types: &[String]) -> Result<String, CliError> {
     if non_interactive_env() {
         return Err(CliError::InputError(
             "Non-interactive environment: cannot prompt for branch type".to_string(),
         ));
     }
-    let branch_type = Select::new("Select the type of branch:", BRANCH_TYPES.to_vec())
+    let branch_type = Select::new("Select the type of branch:", types.to_vec())
         .with_help_message("Use arrow keys to navigate, Enter to select")
         .prompt()
         .map_err(|e| CliError::InputError(e.to_string()))?;

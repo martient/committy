@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "committy-tools",
+  "description": "Agent workflows and enforcement for Committy repositories.",
+  "owner": {
+    "name": "Arnaud Leherpeur",
+    "email": "arnaud.leherpeur@taultek.com"
+  },
+  "plugins": [
+    {
+      "name": "committy",
+      "source": "./plugins/committy",
+      "description": "Token-efficient commit, branch, release, and convention enforcement workflows.",
+      "category": "Development",
+      "tags": ["git", "conventional-commits", "agents"]
+    }
+  ]
+}

@@ -26,6 +26,8 @@ pub struct RepositoryConfig {
     #[serde(default)]
     pub commit_rules: CommitRulesConfig,
     #[serde(default)]
+    pub branch_rules: BranchRulesConfig,
+    #[serde(default)]
     pub git: GitConfig,
     #[serde(default)]
     pub convention: Option<ConventionConfig>,
@@ -187,6 +189,27 @@ pub struct CommitRulesConfig {
     pub custom_types: Vec<CustomCommitType>,
 }
 
+/// Branch naming rules used by structured branch creation and optional explicit-name enforcement.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BranchRulesConfig {
+    #[serde(default)]
+    pub require_ticket: bool,
+    #[serde(default = "default_ticket_pattern")]
+    pub ticket_pattern: String,
+    #[serde(default)]
+    pub enforce_explicit_names: bool,
+}
+
+impl Default for BranchRulesConfig {
+    fn default() -> Self {
+        Self {
+            require_ticket: false,
+            ticket_pattern: default_ticket_pattern(),
+            enforce_explicit_names: false,
+        }
+    }
+}
+
 impl Default for CommitRulesConfig {
     fn default() -> Self {
         Self {
@@ -256,6 +279,10 @@ fn default_100() -> usize {
     100
 }
 
+fn default_ticket_pattern() -> String {
+    "^[A-Z]+[0-9]+$".to_string()
+}
+
 impl RepositoryConfig {
     /// Load repository configuration from .committy/config.toml
     pub fn load(repo_path: &Path) -> Result<Self> {
@@ -300,6 +327,8 @@ impl RepositoryConfig {
     /// Validate the configuration
     pub fn validate(&self, repo_path: &Path) -> Result<()> {
         validate_git_config_overrides(&self.git.config_overrides)?;
+        regex::Regex::new(&self.branch_rules.ticket_pattern)
+            .with_context(|| "Invalid branch_rules.ticket_pattern")?;
 
         // Validate package names are unique
         let mut names = HashSet::new();
@@ -547,6 +576,7 @@ mod tests {
             dependencies: vec![],
             scopes: ScopeConfig::default(),
             commit_rules: CommitRulesConfig::default(),
+            branch_rules: BranchRulesConfig::default(),
             git: Default::default(),
             convention: None,
             release: None,
@@ -613,6 +643,7 @@ mod tests {
             dependencies: vec![],
             scopes: ScopeConfig::default(),
             commit_rules: CommitRulesConfig::default(),
+            branch_rules: BranchRulesConfig::default(),
             git: Default::default(),
             convention: None,
             release: None,
@@ -667,6 +698,7 @@ mod tests {
             dependencies: vec![],
             scopes: ScopeConfig::default(),
             commit_rules: CommitRulesConfig::default(),
+            branch_rules: BranchRulesConfig::default(),
             git: Default::default(),
             convention: None,
             release: None,
@@ -727,6 +759,7 @@ mod tests {
             dependencies: vec![],
             scopes: ScopeConfig::default(),
             commit_rules: CommitRulesConfig::default(),
+            branch_rules: BranchRulesConfig::default(),
             git: Default::default(),
             convention: None,
             release: None,

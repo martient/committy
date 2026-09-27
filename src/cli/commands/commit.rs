@@ -2,6 +2,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use crate::cli::output::{MachineContext, API_VERSION};
 use crate::cli::Command;
 use crate::config::hierarchy::MergedConfig;
 use crate::config::repository::RepositoryConfig;
@@ -63,6 +64,7 @@ pub struct CommitCommand {
 
 #[derive(Debug, Serialize)]
 struct CommitCommandOutput {
+    api_version: u8,
     command: String,
     ok: bool,
     dry_run: bool,
@@ -78,6 +80,13 @@ struct CommitCommandOutput {
 impl Command for CommitCommand {
     fn execute(&self, non_interactive: bool) -> Result<(), CliError> {
         self.execute_with_command_name(non_interactive, "commit")
+    }
+
+    fn machine_context(&self) -> Option<MachineContext> {
+        (self.output == "json").then_some(MachineContext {
+            command: "commit",
+            dry_run: self.dry_run,
+        })
     }
 }
 
@@ -280,6 +289,7 @@ impl CommitCommand {
             .map_err(|e| CliError::Generic(e.to_string()))?;
         if !validation_issues.is_empty() {
             let output = CommitCommandOutput {
+                api_version: API_VERSION,
                 command: command_name.into(),
                 ok: false,
                 dry_run: self.dry_run,
@@ -303,6 +313,7 @@ impl CommitCommand {
             self.execute_workflow_if_configured(repo_path, &full_message, !self.dry_run)?;
 
         let output = CommitCommandOutput {
+            api_version: API_VERSION,
             command: command_name.into(),
             ok: true,
             dry_run: self.dry_run,

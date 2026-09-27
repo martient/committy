@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "committy",
+  "version": "0.1.0",
+  "description": "Token-efficient commit, branch, release, and repository convention workflows backed by the Committy CLI.",
+  "author": {
+    "name": "Arnaud Leherpeur",
+    "email": "arnaud.leherpeur@taultek.com"
+  },
+  "homepage": "https://github.com/martient/committy",
+  "repository": "https://github.com/martient/committy",
+  "license": "Apache-2.0",
+  "keywords": ["git", "conventional-commits", "branches", "releases", "agents"]
+}

@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use serde::Serialize;
 use structopt::StructOpt;
 
+use crate::cli::output::{MachineContext, API_VERSION};
 use crate::cli::Command;
 use crate::error::CliError;
 use crate::linter::{check_message_format_for_repo, CommitIssue, CommitLinter};
@@ -82,6 +83,13 @@ impl Command for LintCommand {
             Err(CliError::LintIssues(issues.len()))
         }
     }
+
+    fn machine_context(&self) -> Option<MachineContext> {
+        (self.output == "json").then_some(MachineContext {
+            command: "lint",
+            dry_run: false,
+        })
+    }
 }
 
 impl LintCommand {
@@ -129,6 +137,7 @@ fn print_history_output(output: &str, issues: &[CommitIssue]) -> Result<(), CliE
     if output == "json" {
         #[derive(Serialize)]
         struct LintOutput<'a> {
+            api_version: u8,
             command: &'static str,
             ok: bool,
             dry_run: bool,
@@ -137,6 +146,7 @@ fn print_history_output(output: &str, issues: &[CommitIssue]) -> Result<(), CliE
             errors: Option<Vec<String>>,
         }
         let payload = LintOutput {
+            api_version: API_VERSION,
             command: "lint",
             ok: issues.is_empty(),
             dry_run: false,
@@ -165,6 +175,7 @@ fn print_message_output(output: &str, issues: &[String]) -> Result<(), CliError>
     if output == "json" {
         #[derive(Serialize)]
         struct LintMessageOutput<'a> {
+            api_version: u8,
             command: &'static str,
             ok: bool,
             dry_run: bool,
@@ -173,6 +184,7 @@ fn print_message_output(output: &str, issues: &[String]) -> Result<(), CliError>
             errors: Option<Vec<String>>,
         }
         let payload = LintMessageOutput {
+            api_version: API_VERSION,
             command: "lint",
             ok: issues.is_empty(),
             dry_run: false,
