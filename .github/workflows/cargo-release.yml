@@ -13,7 +13,27 @@ on:
       - "v[0-9]+.[0-9]+.[0-9]+-*"
 
 jobs:
+  verify-version:
+    name: Verify Cargo.toml matches the tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Compare Cargo.toml version with tag
+        shell: bash
+        run: |
+          VERSION=$(grep -m1 'version\s*=' Cargo.toml | cut -d'"' -f2 | cut -d"'" -f2)
+          TAG="$GITHUB_REF_NAME"
+          if [ "v$VERSION" != "$TAG" ]; then
+            echo "::error::Tag $TAG points at a tree whose Cargo.toml says $VERSION."
+            echo "The published binaries would report $VERSION to --version, and self-update would keep offering $TAG forever."
+            echo "Bump Cargo.toml to ${TAG#v} on the release branch, then move or recreate the tag."
+            exit 1
+          fi
+          echo "Cargo.toml version $VERSION matches tag $TAG"
+
   create-release:
+    needs: verify-version
     runs-on: ubuntu-latest
     outputs:
       is_prerelease: ${{ steps.release_type.outputs.is_prerelease }}
@@ -54,7 +74,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   release:
-    needs: create-release
+    needs: [verify-version, create-release]
     name: Release for ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
 

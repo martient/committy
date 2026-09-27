@@ -18,9 +18,12 @@ impl VersionFile {
         })
     }
 
-    pub fn update_version(&self, new_version: &str) -> Result<(), CliError> {
+    /// Rewrites the version in this file, returning `true` when the contents
+    /// actually changed. A file that already carries `new_version` is left alone
+    /// so callers do not try to commit an empty diff.
+    pub fn update_version(&self, new_version: &str) -> Result<bool, CliError> {
         if !self.path.exists() {
-            return Ok(()); // Skip if file doesn't exist
+            return Ok(false); // Skip if file doesn't exist
         }
 
         let content = std::fs::read_to_string(&self.path).map_err(CliError::IoError)?;
@@ -30,9 +33,13 @@ impl VersionFile {
             .replace_all(&content, &self.format.replace("{}", version_without_v))
             .to_string();
 
+        if new_content == content {
+            return Ok(false);
+        }
+
         std::fs::write(&self.path, new_content).map_err(CliError::IoError)?;
 
-        Ok(())
+        Ok(true)
     }
 }
 
@@ -114,8 +121,7 @@ impl VersionManager {
         let mut updated_files = Vec::new();
 
         for file in &self.version_files {
-            if file.path.exists() {
-                file.update_version(new_version)?;
+            if file.path.exists() && file.update_version(new_version)? {
                 updated_files.push(file.path.clone());
             }
         }

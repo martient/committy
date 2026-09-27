@@ -27,8 +27,8 @@ committy --non-interactive tag --publish --confirm-publish
 # Pre-release flow
 committy --non-interactive tag --prerelease --prerelease-suffix beta
 
-# Bump versions in config files when tagging
-committy --non-interactive tag --bump-files
+# Tag without touching version files
+committy --non-interactive tag --no-bump-files
 ```
 
 ## Flags (TagCommand)
@@ -40,7 +40,13 @@ committy --non-interactive tag --bump-files
   Confirm creation without prompting (interactive path). If omitted, you'll be prompted.
 
 - __--bump-files__ (alias: `-b`)
-  Auto-bump registered version files to the new version and commit them.
+  Bump registered version files to the new version and commit them. This is the default,
+  so the flag is only needed for compatibility with existing scripts.
+
+- __--no-bump-files__
+  Leave version files untouched. Note that the tag then points at a commit whose
+  `Cargo.toml`/`package.json` still carries the previous version, so binaries built from
+  it report the old version.
 
 - __--output__ `<text|json>`
   Output format. Defaults to `text`.
@@ -77,7 +83,8 @@ committy --non-interactive tag --bump-files
 - When `--name` is provided: creates that tag locally.
 - Non-interactive without `--name`: calculates the new tag from commit log using regex rules in config and options above, then creates it locally.
 - `--publish --confirm-publish` is required before the tag or any version-bump commit is pushed to `origin`.
-- `--bump-files`: updates common version files and commits them (message: `chore: bump version to <x.y.z>`). Remote push still requires `--publish --confirm-publish`.
+- Version files are bumped by default: common version files are updated and committed (message: `chore: bump version to <x.y.z>`) before the tag is created, so the tag contains the new version. Pass `--no-bump-files` to opt out. Remote push still requires `--publish --confirm-publish`.
+- In multi-package repositories the same applies per package; the bump commit message lists each package as `<name>@<version>`.
 - Fetch behavior: default is fetch unless `--no-fetch`; `--fetch` forces fetch.
 
 ## JSON output
