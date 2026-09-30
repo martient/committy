@@ -15,9 +15,12 @@ pub const MAX_SHORT_DESCRIPTION_LENGTH: usize = 150;
 pub const MAX_TICKET_NAME_LENGTH: usize = 10;
 pub const MAX_SCOPE_NAME_LENGTH: usize = 15;
 
-pub const MAJOR_REGEX: &str = r"(?im)^(breaking change:|feat(?:\s*\([^)]*\))?!:)";
-pub const MINOR_REGEX: &str = r"(?im)^feat(?:\s*\([^)]*\))?:";
-pub const PATCH_REGEX: &str = r"(?im)^(fix|docs|style|refactor|perf|test|chore|ci|cd|build|revert|security|config)(?:\s*\([^)]*\))?:";
+// The optional `(?:[*-]\s+)?` prefix tolerates GitHub/GitLab squash-merge
+// commit bodies, which render each original commit subject as a bulleted
+// line (e.g. "* feat(core): ...") rather than at true line start.
+pub const MAJOR_REGEX: &str = r"(?im)^(?:[*-]\s+)?(breaking change:|feat(?:\s*\([^)]*\))?!:)";
+pub const MINOR_REGEX: &str = r"(?im)^(?:[*-]\s+)?feat(?:\s*\([^)]*\))?:";
+pub const PATCH_REGEX: &str = r"(?im)^(?:[*-]\s+)?(fix|docs|style|refactor|perf|test|chore|ci|cd|build|revert|security|config)(?:\s*\([^)]*\))?:";
 
 use anyhow::Result;
 use chrono::{DateTime, FixedOffset};
@@ -185,6 +188,29 @@ mod tests {
             config.last_metrics_reminder.to_rfc3339(),
             "2006-01-01T00:00:00+01:00"
         );
+    }
+
+    #[test]
+    fn bump_regexes_match_squash_merge_bullet_lines() {
+        // GitHub/GitLab squash-merge commit bodies render each original
+        // commit subject as "* type(scope): message", not at true line
+        // start, so the regexes must tolerate that bullet prefix.
+        let minor_re = regex::Regex::new(MINOR_REGEX).unwrap();
+        let major_re = regex::Regex::new(MAJOR_REGEX).unwrap();
+        let patch_re = regex::Regex::new(PATCH_REGEX).unwrap();
+
+        assert!(minor_re.is_match("* feat(core): stabilize agent json contract"));
+        assert!(major_re.is_match("* feat(core)!: breaking change"));
+        assert!(patch_re.is_match("* fix(core): preserve linked worktree discovery"));
+
+        // Plain (non-squashed) commit subjects must keep matching too.
+        assert!(minor_re.is_match("feat(core): add a feature"));
+        assert!(major_re.is_match("feat!: breaking change"));
+        assert!(patch_re.is_match("fix: a bug"));
+
+        // "feat" appearing mid-line (not a bulleted or plain subject)
+        // must still not match.
+        assert!(!minor_re.is_match("this commit does not feat: anything"));
     }
 
     #[test]

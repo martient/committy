@@ -17,6 +17,7 @@ use crate::versioning::unified::UnifiedVersioning;
 use log::debug;
 use log::info;
 use regex::Regex;
+use semver::Version;
 use serde::Serialize;
 use serde_json::Value;
 use std::fs;
@@ -409,10 +410,26 @@ impl TagCommand {
         Ok(files)
     }
 
-    /// Find the latest tag in the repository
+    /// Find the latest tag in the repository.
+    ///
+    /// `tag_names()` returns tags in plain lexicographic order, where e.g.
+    /// "v1.9.1" sorts after "v1.10.0" and "v1.11.0" (ASCII '9' > '1'), so a
+    /// naive `.last()` picks the wrong tag once a release reaches two-digit
+    /// components. Parse each `v`-prefixed tag as semver instead and take
+    /// the actual maximum; non-semver tags (per-package tags like
+    /// `docs@0.2.1`, or anything else) are ignored for this purpose.
     fn find_latest_tag(&self, repo: &git2::Repository) -> Result<String, CliError> {
         let tags = repo.tag_names(None).map_err(CliError::from)?;
-        Ok(tags.iter().flatten().last().unwrap_or("").to_string())
+        let latest = tags
+            .iter()
+            .flatten()
+            .filter_map(|name| {
+                let version = Version::parse(name.strip_prefix('v')?).ok()?;
+                Some((version, name.to_string()))
+            })
+            .max_by(|(a, _), (b, _)| a.cmp(b))
+            .map(|(_, name)| name);
+        Ok(latest.unwrap_or_default())
     }
 
     /// Detect affected packages from commit log using scopes
@@ -952,5 +969,64 @@ mod tests {
         );
 
         assert_eq!(tags, vec!["v1.0.1"]);
+    }
+
+    #[test]
+    fn find_latest_tag_uses_semver_order_not_lexicographic_order() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let repo = git2::Repository::init(temp_dir.path()).unwrap();
+
+        let sig = git2::Signature::now("Test", "test@example.com").unwrap();
+        let tree_id = {
+            let mut index = repo.index().unwrap();
+            index.write_tree().unwrap()
+        };
+        let tree = repo.find_tree(tree_id).unwrap();
+        let commit_id = repo
+            .commit(Some("HEAD"), &sig, &sig, "initial", &tree, &[])
+            .unwrap();
+        let commit = repo.find_commit(commit_id).unwrap();
+
+        // Tag lexicographic order would put "v1.9.1" after "v1.10.0" and
+        // "v1.11.0" (ASCII '9' > '1'), even though it is semantically the
+        // oldest of the three.
+        for name in ["v1.9.1", "v1.10.0", "v1.11.0"] {
+            repo.tag(name, commit.as_object(), &sig, name, false)
+                .unwrap();
+        }
+
+        let command = TagCommand::from_iter(["tag"]);
+        let latest = command.find_latest_tag(&repo).unwrap();
+
+        assert_eq!(latest, "v1.11.0");
+    }
+
+    #[test]
+    fn find_latest_tag_ignores_non_semver_tags() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let repo = git2::Repository::init(temp_dir.path()).unwrap();
+
+        let sig = git2::Signature::now("Test", "test@example.com").unwrap();
+        let tree_id = {
+            let mut index = repo.index().unwrap();
+            index.write_tree().unwrap()
+        };
+        let tree = repo.find_tree(tree_id).unwrap();
+        let commit_id = repo
+            .commit(Some("HEAD"), &sig, &sig, "initial", &tree, &[])
+            .unwrap();
+        let commit = repo.find_commit(commit_id).unwrap();
+
+        // Per-package tags (e.g. "docs@0.2.1") aren't `vX.Y.Z` releases and
+        // must not be picked as "latest" over an actual release tag.
+        for name in ["docs@0.2.1", "committy-cli@1.9.1", "v1.10.0"] {
+            repo.tag(name, commit.as_object(), &sig, name, false)
+                .unwrap();
+        }
+
+        let command = TagCommand::from_iter(["tag"]);
+        let latest = command.find_latest_tag(&repo).unwrap();
+
+        assert_eq!(latest, "v1.10.0");
     }
 }
